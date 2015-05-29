@@ -79,16 +79,8 @@ func init() {
 		panic(err)
 	}
 
-	// TODO: write thing that automatically maps
-	// this stuff.... BindStore... or when...?
-
 	DB.Account = AccountStore{Store: DB.Store("accounts")}
 	DB.User = UserStore{Store: DB.Store("users")}
-
-	// bond.Session will call .Collections().map(*Collection()) when it opens
-	// and caches all of those results ...
-
-	// err = bond.BindStores(&Stores)
 }
 
 func dbConnected() bool {
@@ -217,6 +209,16 @@ func TestSlices(t *testing.T) {
 	err = DB.Account.Find(db.Cond{}).All(&accts)
 	assert.NoError(t, err)
 	assert.Len(t, accts, 2)
+}
+
+func TestSelectOnlyIDs(t *testing.T) {
+	var ids []struct {
+		id int64 `db:"id"`
+	}
+	err := DB.Account.Find(db.Cond{}).Select("id").All(&ids)
+	assert.NoError(t, err)
+	assert.Len(t, ids, 2)
+	assert.NotEmpty(t, ids[0])
 }
 
 // TODO:

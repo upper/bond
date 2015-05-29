@@ -175,13 +175,13 @@ func (r *result) buildQuery(col db.Collection) (db.Result, error) {
 		res = res.Skip(*r.args.skip)
 	}
 	if r.args.sort != nil {
-		res = res.Sort(*r.args.sort)
+		res = res.Sort((*r.args.sort)...)
 	}
 	if r.args.fields != nil {
-		res = res.Select(*r.args.fields)
+		res = res.Select((*r.args.fields)...)
 	}
 	if r.args.group != nil {
-		res = res.Group(*r.args.group)
+		res = res.Group((*r.args.group)...)
 	}
 
 	return res, nil
