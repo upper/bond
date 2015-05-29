@@ -52,13 +52,10 @@ func (r *result) Group(fields ...interface{}) db.Result {
 }
 
 func (r *result) One(dst interface{}) error {
-	var col db.Collection
-
-	if r.collection != nil {
-		col = r.collection
-	} else {
-		col = r.getCollection(dst)
+	if r.collection == nil {
+		r.collection = r.getCollection(dst)
 	}
+	col := r.collection
 
 	res, err := r.buildQuery(col)
 	if err != nil {
@@ -70,13 +67,10 @@ func (r *result) One(dst interface{}) error {
 }
 
 func (r *result) All(dst interface{}) error {
-	var col db.Collection
-
-	if r.collection != nil {
-		col = r.collection
-	} else {
-		col = r.getCollection(dst)
+	if r.collection == nil {
+		r.collection = r.getCollection(dst)
 	}
+	col := r.collection
 
 	res, err := r.buildQuery(col)
 	if err != nil {
@@ -88,21 +82,20 @@ func (r *result) All(dst interface{}) error {
 }
 
 func (r *result) Next(dst interface{}) error {
-	var col db.Collection
+	if r.collection == nil {
+		r.collection = r.getCollection(dst)
+	}
+	col := r.collection
 
-	if r.collection != nil {
-		col = r.collection
-	} else {
-		col = r.getCollection(dst)
+	if r.query == nil {
+		res, err := r.buildQuery(col)
+		if err != nil {
+			return err
+		}
+		r.query = res
 	}
 
-	res, err := r.buildQuery(col)
-	if err != nil {
-		return err
-	}
-	r.query = res
-
-	return res.Next(dst)
+	return r.query.Next(dst)
 }
 
 func (r *result) Update(values interface{}) error {
@@ -159,7 +152,7 @@ func (r *result) getCollection(dst interface{}) db.Collection {
 		return r.collection
 	}
 	r.collection = r.session.Store(dst)
-	return r.collection
+	return r.session.Store(dst)
 }
 
 func (r *result) buildQuery(col db.Collection) (db.Result, error) {
