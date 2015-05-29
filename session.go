@@ -72,7 +72,6 @@ func (s *session) getStore(item interface{}) *store {
 		if itemv.Kind() == reflect.Ptr {
 			itemv = reflect.Indirect(itemv)
 		}
-		// TODO: .. if its a slice ............ ?
 		item = itemv.Interface()
 		if m, ok := item.(Model); ok {
 			colName = m.CollectionName()

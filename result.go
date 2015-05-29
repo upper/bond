@@ -51,15 +51,6 @@ func (r *result) Group(fields ...interface{}) db.Result {
 	return r
 }
 
-// hmm.. the issue is, if someone passes us a double pointer,
-// we'll allow it.. but should we ...? in upper..
-
-// .. if we allow the double pointer, well then, none
-// of our callbacks will get hit ........
-// http://play.golang.org/p/WKLxrae_nq
-// .... upper/db, to not allow pointer of pointer....?
-// tell them, they must deref!! hmmmpfff!
-
 func (r *result) One(dst interface{}) error {
 	var col db.Collection
 
