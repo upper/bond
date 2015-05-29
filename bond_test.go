@@ -55,6 +55,12 @@ type AccountStore struct {
 	bond.Store
 }
 
+func (s AccountStore) FindOne(cond db.Cond) (*Account, error) {
+	var a *Account
+	err := s.Find(cond).One(&a)
+	return a, err
+}
+
 type UserStore struct {
 	bond.Store
 }
@@ -157,6 +163,10 @@ func TestAccount(t *testing.T) {
 	count, err := DB.Account.Find(db.Cond{}).Count()
 	assert.NoError(t, err)
 	assert.True(t, count == 1)
+
+	a, err := DB.Account.FindOne(db.Cond{"id": 1})
+	assert.NoError(t, err)
+	assert.NotNil(t, a)
 
 	// -------
 	// Update
