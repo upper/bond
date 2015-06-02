@@ -44,7 +44,9 @@ func (s *session) Store(item interface{}) Store {
 
 func (s *session) Find(terms ...interface{}) db.Result {
 	result := &result{session: s}
-	result.args.where = &terms
+	if len(terms) > 0 {
+		result.args.where = &terms
+	}
 	return result
 }
 

@@ -156,6 +156,10 @@ func TestAccount(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, count == 1)
 
+	count, err = DB.Account.Find().Count()
+	assert.NoError(t, err)
+	assert.True(t, count == 1)
+
 	a, err := DB.Account.FindOne(db.Cond{"id": 1})
 	assert.NoError(t, err)
 	assert.NotNil(t, a)

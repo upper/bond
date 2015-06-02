@@ -156,11 +156,13 @@ func (r *result) getCollection(dst interface{}) db.Collection {
 }
 
 func (r *result) buildQuery(col db.Collection) (db.Result, error) {
-	if r.args.where == nil {
-		return nil, ErrInvalidQuery
-	}
-	res := col.Find((*r.args.where)...)
+	var res db.Result
 
+	if r.args.where == nil {
+		res = col.Find(db.Cond{})
+	} else {
+		res = col.Find((*r.args.where)...)
+	}
 	if r.args.limit != nil {
 		res = res.Limit(*r.args.limit)
 	}
