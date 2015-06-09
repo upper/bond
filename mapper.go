@@ -22,8 +22,8 @@ type mapper struct {
 }
 
 type structInfo struct {
-	*reflectx.Fields
-	pkFieldInfo *reflectx.Field
+	*reflectx.StructMap
+	pkFieldInfo *reflectx.FieldInfo
 }
 
 func newMapper() *mapper {
@@ -52,7 +52,7 @@ func (m *mapper) getStructInfo(item interface{}) (*structInfo, reflect.Value, er
 		return sinfo, itemv, nil
 	}
 
-	sinfo = &structInfo{Fields: m.TypeMap(t)}
+	sinfo = &structInfo{StructMap: m.TypeMap(t)}
 
 	for _, f := range sinfo.Index {
 		if _, ok := f.Options["pk"]; ok {
