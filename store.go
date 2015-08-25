@@ -11,15 +11,27 @@ type Store interface {
 	Session() Session
 	Save(interface{}) error
 	Delete(interface{}) error
+	Tx(db.Tx) Store
 }
 
 type store struct {
 	db.Collection
-	session Session
+	session *session
+}
+
+// Tx returns a copy of the store that runs in the context of the given
+// transaction.
+func (s *store) Tx(tx db.Tx) Store {
+	return &store{
+		Collection: tx.C(s.Collection.Name()),
+		session: &session{
+			Database: tx,
+			stores:   make(map[string]*store),
+		},
+	}
 }
 
 func (s *store) Append(item interface{}) (interface{}, error) {
-
 	if m, ok := item.(HasValidate); ok {
 		if err := m.Validate(); err != nil {
 			return nil, err
