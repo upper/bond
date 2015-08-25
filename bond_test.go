@@ -13,6 +13,10 @@ import (
 )
 
 var (
+	testHost string = `127.0.0.1`
+)
+
+var (
 	DB *database
 )
 
@@ -67,12 +71,17 @@ type UserStore struct {
 
 func init() {
 	// os.Setenv("UPPERIO_DB_DEBUG", "1")
+	if os.Getenv("TEST_HOST") != "" {
+		testHost = os.Getenv("TEST_HOST")
+	}
 
 	var err error
 	DB = &database{}
 
 	DB.Session, err = bond.Open(`postgresql`, db.Settings{
-		Host: "127.0.0.1", Database: "bond_test",
+		Host:     testHost,
+		User:     "bond_user",
+		Database: "bond_test",
 	})
 
 	if err != nil {
