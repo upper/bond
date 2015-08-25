@@ -132,6 +132,10 @@ func TestAccount(t *testing.T) {
 	err := DB.Save(user)
 	assert.NoError(t, err)
 
+	// Should fail because user is a UNIQUE value.
+	err = DB.Save(&User{Username: "peter"})
+	assert.Error(t, err)
+
 	acct := &Account{Name: "Pressly"}
 	err = DB.Account.Save(acct)
 	assert.NoError(t, err)
@@ -232,6 +236,48 @@ func TestSelectOnlyIDs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, ids, 2)
 	assert.NotEmpty(t, ids[0])
+}
+
+func TestTransaction(t *testing.T) {
+	tx, err := DB.NewTransaction()
+	assert.NoError(t, err)
+
+	// Should fail because user is a UNIQUE value and we already have a "peter".
+	err = DB.User.Tx(tx).Save(&User{Username: "peter"})
+	assert.Error(t, err)
+
+	// Ok, rolling back.
+	err = tx.Rollback()
+	assert.NoError(t, err)
+
+	// Start again.
+	tx, err = DB.NewTransaction()
+
+	// Attempt to add two new unique values.
+	err = DB.User.Tx(tx).Save(&User{Username: "Joe"})
+	assert.NoError(t, err)
+
+	err = tx.Save(&User{Username: "Cool"})
+	assert.NoError(t, err)
+
+	// Nope!
+	err = tx.Rollback()
+	assert.NoError(t, err)
+
+	// Start again.
+	tx, err = DB.NewTransaction()
+	assert.NoError(t, err)
+
+	// Attempt to add two unique values.
+	err = DB.User.Tx(tx).Save(&User{Username: "Joe"})
+	assert.NoError(t, err)
+
+	err = tx.Save(&User{Username: "Cool"})
+	assert.NoError(t, err)
+
+	// Yes, commit them.
+	err = tx.Commit()
+	assert.NoError(t, err)
 }
 
 // TODO:
