@@ -16,7 +16,7 @@ type Store interface {
 
 type store struct {
 	db.Collection
-	session *session
+	session Session
 }
 
 // Tx returns a copy of the store that runs in the context of the given
