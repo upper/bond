@@ -1,6 +1,8 @@
 package bond
 
-import "errors"
+import (
+	"errors"
+)
 
 var (
 	ErrUnknownCollection = errors.New("unknown collection")
@@ -21,25 +23,25 @@ type HasValidate interface {
 }
 
 type HasBeforeCreate interface {
-	BeforeCreate() error
+	BeforeCreate(Session) error
 }
 
 type HasAfterCreate interface {
-	AfterCreate()
+	AfterCreate(Session)
 }
 
 type HasBeforeUpdate interface {
-	BeforeUpdate() error
+	BeforeUpdate(Session) error
 }
 
 type HasAfterUpdate interface {
-	AfterUpdate()
+	AfterUpdate(Session)
 }
 
 type HasBeforeDelete interface {
-	BeforeDelete() error
+	BeforeDelete(Session) error
 }
 
 type HasAfterDelete interface {
-	AfterDelete()
+	AfterDelete(Session)
 }
