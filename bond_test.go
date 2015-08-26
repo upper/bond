@@ -63,9 +63,9 @@ type User struct {
 	Username  string `db:"username"`
 }
 
-func (u User) AfterCreate(tx bond.Session) {
+func (u User) AfterCreate(ctx bond.Session) {
 	message := fmt.Sprintf("User %q was created.", u.Username)
-	tx.Save(&Log{Message: message})
+	ctx.Save(&Log{Message: message})
 }
 
 func (u *User) CollectionName() string {
