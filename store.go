@@ -53,6 +53,10 @@ func (s *store) Append(item interface{}) (interface{}, error) {
 		m.AfterCreate()
 	}
 
+	if m, ok := item.(hasAfterCreateTx); ok {
+		m.AfterCreate(s.session)
+	}
+
 	return id, nil
 }
 
@@ -93,6 +97,10 @@ func (s *store) Save(item interface{}) error {
 
 		if m, ok := item.(HasAfterCreate); ok {
 			m.AfterCreate()
+		}
+
+		if m, ok := item.(hasAfterCreateTx); ok {
+			m.AfterCreate(s.session)
 		}
 
 	} else {
