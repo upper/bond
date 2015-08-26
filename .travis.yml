@@ -18,6 +18,6 @@ install:
 
 script:
   - rm -rf $GOPATH/src/upper.io/bond
-  - ln -s $GOPATH/src/upper.io/bond $GOPATH/src/github.com/upper/bond
+  - ln -s $GOPATH/src/github.com/upper/bond $GOPATH/src/upper.io/bond
   - cd $GOPATH/src/upper.io/bond
   - make test
