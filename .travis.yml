@@ -17,4 +17,7 @@ install:
   - (cd $GOPATH/src/upper.io/db && git pull -a && git checkout issue-103 && go build && go install) # temporal fix
 
 script:
+  - rm -rf $GOPATH/src/github.com/upper
+  - ln -s $GOPATH/src/upper.io/db/bond $GOPATH/src/github.com/upper
+  - cd $GOPATH/src/upper.io/db/bond
   - make test
