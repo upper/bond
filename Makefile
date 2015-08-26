@@ -7,7 +7,7 @@ build:
 	@go build
 
 test: resetdb
-	@go test -v ./...
+	UPPERIO_DB_DEBUG=1 go test -v ./...
 
 resetdb:
 	psql -Upostgres -h$(TEST_HOST) <<< "DROP DATABASE IF EXISTS $(BOND_DB)"
