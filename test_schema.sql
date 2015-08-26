@@ -14,3 +14,10 @@ CREATE TABLE users (
   account_id integer,
   username varchar(256) UNIQUE
 );
+
+DROP TABLE IF EXISTS logs;
+
+CREATE TABLE logs (
+  id serial primary key,
+	message VARCHAR
+);
