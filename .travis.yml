@@ -1,0 +1,24 @@
+sudo: false
+
+language: go
+
+go:
+  - 1.4
+  - 1.4.1
+  - 1.4.2
+  - 1.5
+
+addons:
+  postgresql: "9.4"
+
+env: GOARCH=amd64 TEST_HOST=127.0.0.1
+
+install:
+  - go get -v -t -d
+  - (cd $GOPATH/src/upper.io/db && git pull -a && git checkout issue-103 && go build && go install) # temporal fix
+
+script:
+  - rm -rf $GOPATH/src/upper.io/bond
+  - ln -s $GOPATH/src/github.com/upper/bond $GOPATH/src/upper.io/bond
+  - cd $GOPATH/src/upper.io/bond
+  - make test

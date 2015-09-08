@@ -1,6 +1,7 @@
 package bond_test
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -13,6 +14,10 @@ import (
 )
 
 var (
+	testHost string = `127.0.0.1`
+)
+
+var (
 	DB *database
 )
 
@@ -21,6 +26,12 @@ type database struct {
 
 	Account AccountStore `collection:"accounts"`
 	User    UserStore    `collection:"users"`
+	Log     LogStore     `collection:"logs"`
+}
+
+type Log struct {
+	ID      int64  `db:"id,omitempty,pk"`
+	Message string `db:"message"`
 }
 
 type Account struct {
@@ -32,6 +43,11 @@ type Account struct {
 
 func (a *Account) CollectionName() string {
 	return DB.Account.Name()
+}
+
+func (a Account) AfterCreate(sess bond.Session) {
+	message := fmt.Sprintf("Account %q was created.", a.Name)
+	sess.Save(&Log{Message: message})
 }
 
 func (a *Account) BeforeDelete() error {
@@ -47,8 +63,21 @@ type User struct {
 	Username  string `db:"username"`
 }
 
+func (u User) AfterCreate(sess bond.Session) {
+	message := fmt.Sprintf("User %q was created.", u.Username)
+	sess.Save(&Log{Message: message})
+}
+
 func (u *User) CollectionName() string {
 	return `users`
+}
+
+func (l *Log) CollectionName() string {
+	return `logs`
+}
+
+type LogStore struct {
+	bond.Store
 }
 
 type AccountStore struct {
@@ -67,12 +96,17 @@ type UserStore struct {
 
 func init() {
 	// os.Setenv("UPPERIO_DB_DEBUG", "1")
+	if os.Getenv("TEST_HOST") != "" {
+		testHost = os.Getenv("TEST_HOST")
+	}
 
 	var err error
 	DB = &database{}
 
 	DB.Session, err = bond.Open(`postgresql`, db.Settings{
-		Host: "127.0.0.1", Database: "bond_test",
+		Host:     testHost,
+		User:     "bond_user",
+		Database: "bond_test",
 	})
 
 	if err != nil {
@@ -81,6 +115,7 @@ func init() {
 
 	DB.Account = AccountStore{Store: DB.Store("accounts")}
 	DB.User = UserStore{Store: DB.Store("users")}
+	DB.Log = LogStore{Store: DB.Store("logs")}
 }
 
 func dbConnected() bool {
@@ -122,6 +157,10 @@ func TestAccount(t *testing.T) {
 	user := &User{Username: "peter"}
 	err := DB.Save(user)
 	assert.NoError(t, err)
+
+	// Should fail because user is a UNIQUE value.
+	err = DB.Save(&User{Username: "peter"})
+	assert.Error(t, err)
 
 	acct := &Account{Name: "Pressly"}
 	err = DB.Account.Save(acct)
@@ -223,6 +262,56 @@ func TestSelectOnlyIDs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, ids, 2)
 	assert.NotEmpty(t, ids[0])
+}
+
+func TestTransaction(t *testing.T) {
+	tx, err := DB.NewTransaction()
+	assert.NoError(t, err)
+
+	// Should fail because user is a UNIQUE value and we already have a "peter".
+	err = DB.User.Tx(tx).Save(&User{Username: "peter"})
+	assert.Error(t, err)
+
+	// Ok, rolling back.
+	err = tx.Rollback()
+	assert.NoError(t, err)
+
+	// Start again.
+	tx, err = DB.NewTransaction()
+
+	// Attempt to add two new unique values.
+	err = DB.User.Tx(tx).Save(&User{Username: "Joe"})
+	assert.NoError(t, err)
+
+	err = tx.Save(&User{Username: "Cool"})
+	assert.NoError(t, err)
+
+	// And a value that is going to be rolled back.
+	err = tx.Save(&Account{Name: "Rolled back"})
+	assert.NoError(t, err)
+
+	// Nope!
+	err = tx.Rollback()
+	assert.NoError(t, err)
+
+	// Start again.
+	tx, err = DB.NewTransaction()
+	assert.NoError(t, err)
+
+	// Attempt to add two unique values.
+	err = DB.User.Tx(tx).Save(&User{Username: "Joe"})
+	assert.NoError(t, err)
+
+	err = tx.Save(&User{Username: "Cool"})
+	assert.NoError(t, err)
+
+	// And a value that is going to be commited.
+	err = tx.Save(&Account{Name: "Commited!"})
+	assert.NoError(t, err)
+
+	// Yes, commit them.
+	err = tx.Commit()
+	assert.NoError(t, err)
 }
 
 // TODO:

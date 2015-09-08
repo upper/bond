@@ -1,7 +1,6 @@
 package bond
 
 import (
-	"fmt"
 	"reflect"
 	"sync"
 
@@ -9,16 +8,16 @@ import (
 )
 
 type Session interface {
-	db.Database
+	db.Tx
 	Store(interface{}) Store
 	Find(...interface{}) db.Result
 	Save(Model) error
 	Delete(Model) error
+	NewTransaction() (Session, error)
 }
 
 type session struct {
 	db.Database
-
 	stores     map[string]*store
 	storesLock sync.Mutex
 }
@@ -35,6 +34,39 @@ func Open(adapter string, url db.ConnectionURL) (Session, error) {
 	}
 
 	return sess, nil
+}
+
+// NewTransaction creates and returns a session that runs within a transaction
+// block.
+func (s *session) NewTransaction() (Session, error) {
+
+	tx, err := s.Database.Transaction()
+	if err != nil {
+		return nil, err
+	}
+
+	sess := &session{
+		Database: tx,
+		stores:   make(map[string]*store),
+	}
+
+	return sess, nil
+}
+
+// Commit commits the current transaction.
+func (s *session) Commit() error {
+	if tx, ok := s.Database.(db.Tx); ok {
+		return tx.Commit()
+	}
+	return ErrMissingTransaction
+}
+
+// Rollback discards the current transaction.
+func (s *session) Rollback() error {
+	if tx, ok := s.Database.(db.Tx); ok {
+		return tx.Rollback()
+	}
+	return ErrMissingTransaction
 }
 
 func (s *session) Store(item interface{}) Store {
@@ -91,12 +123,7 @@ func (s *session) getStore(item interface{}) *store {
 		return store
 	}
 
-	col, err := s.Database.Collection(colName)
-	if err != nil {
-		panic(fmt.Errorf("%v: %v", colName, err))
-	}
-
-	store := &store{Collection: col, session: s}
+	store := &store{Collection: s.Database.C(colName), session: s}
 	s.stores[colName] = store
 	return store
 }

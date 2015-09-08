@@ -11,6 +11,7 @@ type Store interface {
 	Session() Session
 	Save(interface{}) error
 	Delete(interface{}) error
+	Tx(db.Tx) Store
 }
 
 type store struct {
@@ -18,8 +19,19 @@ type store struct {
 	session Session
 }
 
-func (s *store) Append(item interface{}) (interface{}, error) {
+// Tx returns a copy of the store that runs in the context of the given
+// transaction.
+func (s *store) Tx(tx db.Tx) Store {
+	return &store{
+		Collection: tx.C(s.Collection.Name()),
+		session: &session{
+			Database: tx,
+			stores:   make(map[string]*store),
+		},
+	}
+}
 
+func (s *store) Append(item interface{}) (interface{}, error) {
 	if m, ok := item.(HasValidate); ok {
 		if err := m.Validate(); err != nil {
 			return nil, err
@@ -27,7 +39,7 @@ func (s *store) Append(item interface{}) (interface{}, error) {
 	}
 
 	if m, ok := item.(HasBeforeCreate); ok {
-		if err := m.BeforeCreate(); err != nil {
+		if err := m.BeforeCreate(s.session); err != nil {
 			return nil, err
 		}
 	}
@@ -38,7 +50,7 @@ func (s *store) Append(item interface{}) (interface{}, error) {
 	}
 
 	if m, ok := item.(HasAfterCreate); ok {
-		m.AfterCreate()
+		m.AfterCreate(s.session)
 	}
 
 	return id, nil
@@ -68,7 +80,7 @@ func (s *store) Save(item interface{}) error {
 		// Create
 
 		if m, ok := item.(HasBeforeCreate); ok {
-			if err := m.BeforeCreate(); err != nil {
+			if err := m.BeforeCreate(s.session); err != nil {
 				return err
 			}
 		}
@@ -80,14 +92,14 @@ func (s *store) Save(item interface{}) error {
 		pkField.Set(reflect.ValueOf(id))
 
 		if m, ok := item.(HasAfterCreate); ok {
-			m.AfterCreate()
+			m.AfterCreate(s.session)
 		}
 
 	} else {
 		// Update
 
 		if m, ok := item.(HasBeforeUpdate); ok {
-			if err := m.BeforeUpdate(); err != nil {
+			if err := m.BeforeUpdate(s.session); err != nil {
 				return err
 			}
 		}
@@ -100,7 +112,7 @@ func (s *store) Save(item interface{}) error {
 		}
 
 		if m, ok := item.(HasAfterUpdate); ok {
-			m.AfterUpdate()
+			m.AfterUpdate(s.session)
 		}
 
 	}
@@ -123,7 +135,7 @@ func (s *store) Delete(item interface{}) error {
 	}
 
 	if m, ok := item.(HasBeforeDelete); ok {
-		if err := m.BeforeDelete(); err != nil {
+		if err := m.BeforeDelete(s.session); err != nil {
 			return err
 		}
 	}
@@ -134,7 +146,7 @@ func (s *store) Delete(item interface{}) error {
 	}
 
 	if m, ok := item.(HasAfterDelete); ok {
-		m.AfterDelete()
+		m.AfterDelete(s.session)
 	}
 
 	return nil
