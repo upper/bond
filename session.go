@@ -37,12 +37,15 @@ func Open(adapter string, url db.ConnectionURL) (Session, error) {
 }
 
 // NewTransaction creates and returns a session that runs within a transaction
-// block.
+// block or continues to run in a previously started transaction block.
 func (s *session) NewTransaction() (Session, error) {
-
-	tx, err := s.Database.Transaction()
-	if err != nil {
-		return nil, err
+	tx, ok := s.Database.(db.Tx)
+	if !ok {
+		var err error
+		tx, err = s.Database.Transaction()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	sess := &session{
