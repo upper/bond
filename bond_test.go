@@ -45,9 +45,9 @@ func (a *Account) CollectionName() string {
 	return DB.Account.Name()
 }
 
-func (a Account) AfterCreate(sess bond.Session) {
+func (a Account) AfterCreate(sess bond.Session) error {
 	message := fmt.Sprintf("Account %q was created.", a.Name)
-	sess.Save(&Log{Message: message})
+	return sess.Save(&Log{Message: message})
 }
 
 func (a *Account) BeforeDelete() error {
@@ -63,9 +63,9 @@ type User struct {
 	Username  string `db:"username"`
 }
 
-func (u User) AfterCreate(sess bond.Session) {
+func (u User) AfterCreate(sess bond.Session) error {
 	message := fmt.Sprintf("User %q was created.", u.Username)
-	sess.Save(&Log{Message: message})
+	return sess.Save(&Log{Message: message})
 }
 
 func (u *User) CollectionName() string {

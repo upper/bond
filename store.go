@@ -50,7 +50,9 @@ func (s *store) Append(item interface{}) (interface{}, error) {
 	}
 
 	if m, ok := item.(HasAfterCreate); ok {
-		m.AfterCreate(s.session)
+		if err := m.AfterCreate(s.session); err != nil {
+			return nil, err
+		}
 	}
 
 	return id, nil
@@ -92,7 +94,9 @@ func (s *store) Save(item interface{}) error {
 		pkField.Set(reflect.ValueOf(id))
 
 		if m, ok := item.(HasAfterCreate); ok {
-			m.AfterCreate(s.session)
+			if err := m.AfterCreate(s.session); err != nil {
+				return err
+			}
 		}
 
 	} else {
@@ -112,7 +116,9 @@ func (s *store) Save(item interface{}) error {
 		}
 
 		if m, ok := item.(HasAfterUpdate); ok {
-			m.AfterUpdate(s.session)
+			if err := m.AfterUpdate(s.session); err != nil {
+				return err
+			}
 		}
 
 	}
@@ -146,7 +152,9 @@ func (s *store) Delete(item interface{}) error {
 	}
 
 	if m, ok := item.(HasAfterDelete); ok {
-		m.AfterDelete(s.session)
+		if err := m.AfterDelete(s.session); err != nil {
+			return err
+		}
 	}
 
 	return nil

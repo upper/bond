@@ -27,7 +27,7 @@ type HasBeforeCreate interface {
 }
 
 type HasAfterCreate interface {
-	AfterCreate(Session)
+	AfterCreate(Session) error
 }
 
 type HasBeforeUpdate interface {
@@ -35,7 +35,7 @@ type HasBeforeUpdate interface {
 }
 
 type HasAfterUpdate interface {
-	AfterUpdate(Session)
+	AfterUpdate(Session) error
 }
 
 type HasBeforeDelete interface {
@@ -43,5 +43,5 @@ type HasBeforeDelete interface {
 }
 
 type HasAfterDelete interface {
-	AfterDelete(Session)
+	AfterDelete(Session) error
 }
