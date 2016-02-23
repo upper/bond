@@ -32,25 +32,29 @@ func (s *store) Tx(tx db.Tx) Store {
 }
 
 func (s *store) Append(item interface{}) (interface{}, error) {
+	var err error
+
 	if m, ok := item.(HasValidate); ok {
-		if err := m.Validate(); err != nil {
+		if err = m.Validate(); err != nil {
 			return nil, err
 		}
 	}
 
 	if m, ok := item.(HasBeforeCreate); ok {
-		if err := m.BeforeCreate(s.session); err != nil {
+		if err = m.BeforeCreate(s.session); err != nil {
 			return nil, err
 		}
 	}
 
-	id, err := s.Collection.Append(item)
-	if err != nil {
+	var id interface{}
+	if id, err = s.Collection.Append(item); err != nil {
 		return nil, err
 	}
 
 	if m, ok := item.(HasAfterCreate); ok {
-		m.AfterCreate(s.session)
+		if err = m.AfterCreate(s.session); err != nil {
+			return nil, err
+		}
 	}
 
 	return id, nil
@@ -69,7 +73,7 @@ func (s *store) Save(item interface{}) error {
 	}
 
 	if m, ok := item.(HasValidate); ok {
-		if err := m.Validate(); err != nil {
+		if err = m.Validate(); err != nil {
 			return err
 		}
 	}
@@ -80,41 +84,43 @@ func (s *store) Save(item interface{}) error {
 		// Create
 
 		if m, ok := item.(HasBeforeCreate); ok {
-			if err := m.BeforeCreate(s.session); err != nil {
+			if err = m.BeforeCreate(s.session); err != nil {
 				return err
 			}
 		}
 
-		id, err := s.Collection.Append(item)
-		if err != nil {
+		if id, err = s.Collection.Append(item); err != nil {
 			return err
 		}
+
 		pkField.Set(reflect.ValueOf(id))
 
 		if m, ok := item.(HasAfterCreate); ok {
-			m.AfterCreate(s.session)
+			if err = m.AfterCreate(s.session); err != nil {
+				return err
+			}
 		}
 
 	} else {
 		// Update
 
 		if m, ok := item.(HasBeforeUpdate); ok {
-			if err := m.BeforeUpdate(s.session); err != nil {
+			if err = m.BeforeUpdate(s.session); err != nil {
 				return err
 			}
 		}
 
 		idKey := structInfo.pkFieldInfo.Name
 
-		err := s.Collection.Find(db.Cond{idKey: id}).Update(item)
-		if err != nil {
+		if err = s.Collection.Find(db.Cond{idKey: id}).Update(item); err != nil {
 			return err
 		}
 
 		if m, ok := item.(HasAfterUpdate); ok {
-			m.AfterUpdate(s.session)
+			if err = m.AfterUpdate(s.session); err != nil {
+				return err
+			}
 		}
-
 	}
 
 	return nil
@@ -135,18 +141,19 @@ func (s *store) Delete(item interface{}) error {
 	}
 
 	if m, ok := item.(HasBeforeDelete); ok {
-		if err := m.BeforeDelete(s.session); err != nil {
+		if err = m.BeforeDelete(s.session); err != nil {
 			return err
 		}
 	}
 
-	err = s.Collection.Find(db.Cond{idKey: id}).Remove()
-	if err != nil {
+	if err = s.Collection.Find(db.Cond{idKey: id}).Remove(); err != nil {
 		return err
 	}
 
 	if m, ok := item.(HasAfterDelete); ok {
-		m.AfterDelete(s.session)
+		if err = m.AfterDelete(s.session); err != nil {
+			return err
+		}
 	}
 
 	return nil
