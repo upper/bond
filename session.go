@@ -14,6 +14,7 @@ type Session interface {
 	Save(Model) error
 	Delete(Model) error
 	NewTransaction() (Session, error)
+	ContinueTransaction() (Session, error, bool)
 }
 
 type session struct {
