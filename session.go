@@ -37,15 +37,11 @@ func Open(adapter string, url db.ConnectionURL) (Session, error) {
 }
 
 // NewTransaction creates and returns a session that runs within a transaction
-// block or continues to run in a previously started transaction block.
+// block. It will fail if called inside another transaction
 func (s *session) NewTransaction() (Session, error) {
-	tx, ok := s.Database.(db.Tx)
-	if !ok {
-		var err error
-		tx, err = s.Database.Transaction()
-		if err != nil {
-			return nil, err
-		}
+	tx, err := s.Database.Transaction()
+	if err != nil {
+		return nil, err
 	}
 
 	sess := &session{
@@ -54,6 +50,31 @@ func (s *session) NewTransaction() (Session, error) {
 	}
 
 	return sess, nil
+}
+
+// ContinueTransaction creates and returns a session that runs within a
+// transaction block. If called within another transaction block it will reuse
+// the transaction in progress, if not it will start a new transaction.
+// The 3rd returned value indicates if a session was continued (true) or not
+func (s *session) ContinueTransaction() (Session, error, bool) {
+	// check if called within a transaction
+	tx, inTransaction := s.Database.(db.Tx)
+
+	// if not start a new one
+	if !inTransaction {
+		var err error
+		tx, err = s.Database.Transaction()
+		if err != nil {
+			return nil, err, false
+		}
+	}
+
+	sess := &session{
+		Database: tx,
+		stores:   make(map[string]*store),
+	}
+
+	return sess, nil, inTransaction
 }
 
 // Commit commits the current transaction.
