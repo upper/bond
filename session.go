@@ -23,18 +23,22 @@ type session struct {
 	storesLock sync.Mutex
 }
 
+// Open connects to a database.
 func Open(adapter string, url db.ConnectionURL) (Session, error) {
 	conn, err := db.Open(adapter, url)
 	if err != nil {
 		return nil, err
 	}
 
-	sess := &session{
-		Database: conn,
+	return WithSession(conn), nil
+}
+
+// WithSession creates a bond session using the given db session.
+func WithSession(sess db.Database) Session {
+	return &session{
+		Database: sess,
 		stores:   make(map[string]*store),
 	}
-
-	return sess, nil
 }
 
 // NewTransaction creates and returns a session that runs within a transaction
