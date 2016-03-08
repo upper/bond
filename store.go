@@ -3,6 +3,7 @@ package bond
 import (
 	"reflect"
 
+	"database/sql"
 	"upper.io/db"
 )
 
@@ -11,7 +12,7 @@ type Store interface {
 	Session() Session
 	Save(interface{}) error
 	Delete(interface{}) error
-	Tx(db.Tx) Store
+	Tx(interface{}) Store
 }
 
 type store struct {
@@ -21,13 +22,41 @@ type store struct {
 
 // Tx returns a copy of the store that runs in the context of the given
 // transaction.
-func (s *store) Tx(tx db.Tx) Store {
+func (s *store) Tx(tx interface{}) Store {
+	var sess Session
+
+	switch v := tx.(type) {
+	case db.Tx:
+		sess = &session{
+			Database: v,
+		}
+	case db.Database:
+		sess = &session{
+			Database: v,
+		}
+	case *sql.DB:
+		clone, _ := s.Session().WithSession(v)
+		sess = &session{
+			Database: clone,
+		}
+	case *sql.Tx:
+		clone, _ := s.Session().WithSession(v)
+		sess = &session{
+			Database: clone,
+		}
+	case Session:
+		sess = v
+	default:
+		panic("Unknown session type.")
+	}
+
+	if sess.(*session).stores == nil {
+		sess.(*session).stores = make(map[string]*store)
+	}
+
 	return &store{
-		Collection: tx.C(s.Collection.Name()),
-		session: &session{
-			Database: tx,
-			stores:   make(map[string]*store),
-		},
+		Collection: sess.(*session).Database.C(s.Collection.Name()),
+		session:    sess,
 	}
 }
 

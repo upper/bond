@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"upper.io/bond"
 	"upper.io/db"
@@ -307,6 +308,61 @@ func TestTransaction(t *testing.T) {
 
 	// And a value that is going to be commited.
 	err = tx.Save(&Account{Name: "Commited!"})
+	assert.NoError(t, err)
+
+	// Yes, commit them.
+	err = tx.Commit()
+	assert.NoError(t, err)
+}
+
+func TestTransactionWithNormalTx(t *testing.T) {
+	drv := DB.Driver()
+
+	tx, err := drv.(*sqlx.DB).DB.Begin()
+	assert.NoError(t, err)
+
+	// Should fail because user is a UNIQUE value and we already have a "peter".
+	err = DB.User.Tx(tx).Save(&User{Username: "peter"})
+	assert.Error(t, err)
+
+	// Ok, rolling back.
+	err = tx.Rollback()
+	assert.NoError(t, err)
+
+	// Start again.
+	tx, err = drv.(*sqlx.DB).DB.Begin()
+	userTx := DB.User.Tx(tx)
+
+	// Attempt to add two new unique values.
+	err = userTx.Save(&User{Username: "Joe-2"})
+	assert.NoError(t, err)
+
+	err = userTx.Save(&User{Username: "Cool-2"})
+	assert.NoError(t, err)
+
+	// And a value that is going to be rolled back.
+	err = DB.Account.Tx(tx).Save(&Account{Name: "Rolled back"})
+	assert.NoError(t, err)
+
+	// Nope!
+	err = tx.Rollback()
+	assert.NoError(t, err)
+
+	// Start again.
+	tx, err = drv.(*sqlx.DB).DB.Begin()
+	assert.NoError(t, err)
+
+	userTx = DB.User.Tx(tx)
+
+	// Attempt to add two unique values.
+	err = userTx.Save(&User{Username: "Joe-2"})
+	assert.NoError(t, err)
+
+	err = userTx.Save(&User{Username: "Cool-2"})
+	assert.NoError(t, err)
+
+	// And a value that is going to be commited.
+	err = DB.Account.Tx(tx).Save(&Account{Name: "Commited!"})
 	assert.NoError(t, err)
 
 	// Yes, commit them.
