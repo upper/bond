@@ -4,28 +4,29 @@ import (
 	"reflect"
 	"sync"
 
-	"upper.io/db"
+	"upper.io/db.v2"
+	"upper.io/db.v2/postgresql" // TODO: Figure out how to remove this and make it generic.
 )
 
 type Session interface {
-	db.Tx
+	postgresql.Tx
 	Store(interface{}) Store
 	Find(...interface{}) db.Result
 	Save(Model) error
 	Delete(Model) error
-	NewTransaction() (Session, error)
+	Tx() (Session, error)
 	ContinueTransaction() (Session, error, bool)
 }
 
 type session struct {
-	db.Database
+	postgresql.Database
 	stores     map[string]*store
 	storesLock sync.Mutex
 }
 
 // Open connects to a database.
 func Open(adapter string, url db.ConnectionURL) (Session, error) {
-	conn, err := db.Open(adapter, url)
+	conn, err := postgresql.Open(url)
 	if err != nil {
 		return nil, err
 	}
@@ -33,10 +34,10 @@ func Open(adapter string, url db.ConnectionURL) (Session, error) {
 	return &session{Database: conn, stores: make(map[string]*store)}, nil
 }
 
-// NewTransaction creates and returns a session that runs within a transaction
+// Tx creates and returns a session that runs within a transaction
 // block. It will fail if called inside another transaction
-func (s *session) NewTransaction() (Session, error) {
-	tx, err := s.Database.Transaction()
+func (s *session) Tx() (Session, error) {
+	tx, err := s.Database.NewTransaction()
 	if err != nil {
 		return nil, err
 	}
@@ -55,12 +56,12 @@ func (s *session) NewTransaction() (Session, error) {
 // The 3rd returned value indicates if a session was continued (true) or not
 func (s *session) ContinueTransaction() (Session, error, bool) {
 	// check if called within a transaction
-	tx, inTransaction := s.Database.(db.Tx)
+	tx, inTransaction := s.Database.(postgresql.Tx)
 
 	// if not start a new one
 	if !inTransaction {
 		var err error
-		tx, err = s.Database.Transaction()
+		tx, err = s.Database.NewTransaction()
 		if err != nil {
 			return nil, err, false
 		}
@@ -76,7 +77,7 @@ func (s *session) ContinueTransaction() (Session, error, bool) {
 
 // Commit commits the current transaction.
 func (s *session) Commit() error {
-	if tx, ok := s.Database.(db.Tx); ok {
+	if tx, ok := s.Database.(postgresql.Tx); ok {
 		return tx.Commit()
 	}
 	return ErrMissingTransaction
@@ -84,7 +85,7 @@ func (s *session) Commit() error {
 
 // Rollback discards the current transaction.
 func (s *session) Rollback() error {
-	if tx, ok := s.Database.(db.Tx); ok {
+	if tx, ok := s.Database.(postgresql.Tx); ok {
 		return tx.Rollback()
 	}
 	return ErrMissingTransaction
@@ -144,7 +145,7 @@ func (s *session) getStore(item interface{}) *store {
 		return store
 	}
 
-	store := &store{Collection: s.Database.C(colName), session: s}
+	store := &store{Collection: s.Database.Collection(colName), session: s}
 	s.stores[colName] = store
 	return store
 }

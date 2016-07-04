@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jmoiron/sqlx"
+	"database/sql"
 	"github.com/stretchr/testify/assert"
 	"upper.io/bond"
-	"upper.io/db"
-	_ "upper.io/db/postgresql"
+	"upper.io/db.v2"
+	"upper.io/db.v2/postgresql"
 )
 
 var (
@@ -104,7 +104,7 @@ func init() {
 	var err error
 	DB = &database{}
 
-	DB.Session, err = bond.Open(`postgresql`, db.Settings{
+	DB.Session, err = bond.Open(`postgresql`, postgresql.ConnectionURL{
 		Host:     testHost,
 		User:     "bond_user",
 		Database: "bond_test",
@@ -133,10 +133,7 @@ func dbConnected() bool {
 func dbReset() {
 	cols, _ := DB.Collections()
 	for _, k := range cols {
-		col, err := DB.Collection(k)
-		if err == nil {
-			col.Truncate()
-		}
+		DB.Collection(k).Truncate()
 	}
 }
 
@@ -233,7 +230,7 @@ func TestDelete(t *testing.T) {
 	assert.True(t, acct.ID != 0)
 
 	// Delete by query -- without callbacks
-	err = DB.Account.Find(db.Cond{"name": acct.Name}).Remove()
+	err = DB.Account.Find(db.Cond{"name": acct.Name}).Delete()
 	assert.NoError(t, err)
 
 	err = DB.Account.Delete(&Account{Name: "X"})
@@ -241,11 +238,11 @@ func TestDelete(t *testing.T) {
 }
 
 func TestSlices(t *testing.T) {
-	id, err := DB.Account.Append(&Account{Name: "Apple"})
+	id, err := DB.Account.Insert(&Account{Name: "Apple"})
 	assert.NoError(t, err)
 	assert.True(t, id.(int64) > 0)
 
-	id, err = DB.Account.Append(Account{Name: "Google"})
+	id, err = DB.Account.Insert(Account{Name: "Google"})
 	assert.NoError(t, err)
 	assert.True(t, id.(int64) > 0)
 
@@ -266,7 +263,7 @@ func TestSelectOnlyIDs(t *testing.T) {
 }
 
 func TestTransaction(t *testing.T) {
-	tx, err := DB.NewTransaction()
+	tx, err := DB.Tx()
 	assert.NoError(t, err)
 
 	// Should fail because user is a UNIQUE value and we already have a "peter".
@@ -278,7 +275,7 @@ func TestTransaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Start again.
-	tx, err = DB.NewTransaction()
+	tx, err = DB.Tx()
 
 	// Attempt to add two new unique values.
 	err = DB.User.Tx(tx).Save(&User{Username: "Joe"})
@@ -296,7 +293,7 @@ func TestTransaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Start again.
-	tx, err = DB.NewTransaction()
+	tx, err = DB.Tx()
 	assert.NoError(t, err)
 
 	// Attempt to add two unique values.
@@ -318,7 +315,7 @@ func TestTransaction(t *testing.T) {
 func TestTransactionWithNormalTx(t *testing.T) {
 	drv := DB.Driver()
 
-	tx, err := drv.(*sqlx.DB).DB.Begin()
+	tx, err := drv.(*sql.DB).Begin()
 	assert.NoError(t, err)
 
 	// Should fail because user is a UNIQUE value and we already have a "peter".
@@ -330,7 +327,7 @@ func TestTransactionWithNormalTx(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Start again.
-	tx, err = drv.(*sqlx.DB).DB.Begin()
+	tx, err = drv.(*sql.DB).Begin()
 	userTx := DB.User.Tx(tx)
 
 	// Attempt to add two new unique values.
@@ -349,7 +346,7 @@ func TestTransactionWithNormalTx(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Start again.
-	tx, err = drv.(*sqlx.DB).DB.Begin()
+	tx, err = drv.(*sql.DB).Begin()
 	assert.NoError(t, err)
 
 	userTx = DB.User.Tx(tx)

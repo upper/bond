@@ -4,7 +4,8 @@ import (
 	"reflect"
 
 	"database/sql"
-	"upper.io/db"
+	"upper.io/db.v2"
+	"upper.io/db.v2/postgresql" // TODO: Figure out how to remove this and make it generic.
 )
 
 type Store interface {
@@ -26,21 +27,21 @@ func (s *store) Tx(tx interface{}) Store {
 	var sess Session
 
 	switch v := tx.(type) {
-	case db.Tx:
+	case postgresql.Tx:
 		sess = &session{
 			Database: v,
 		}
-	case db.Database:
+	case postgresql.Database:
 		sess = &session{
 			Database: v,
 		}
 	case *sql.DB:
-		clone, _ := s.Session().WithSession(v)
+		clone, _ := s.Session().With(v)
 		sess = &session{
 			Database: clone,
 		}
 	case *sql.Tx:
-		clone, _ := s.Session().WithSession(v)
+		clone, _ := s.Session().With(v)
 		sess = &session{
 			Database: clone,
 		}
@@ -55,12 +56,12 @@ func (s *store) Tx(tx interface{}) Store {
 	}
 
 	return &store{
-		Collection: sess.(*session).Database.C(s.Collection.Name()),
+		Collection: sess.(*session).Database.Collection(s.Collection.Name()),
 		session:    sess,
 	}
 }
 
-func (s *store) Append(item interface{}) (interface{}, error) {
+func (s *store) Insert(item interface{}) (interface{}, error) {
 	var err error
 
 	if m, ok := item.(HasValidate); ok {
@@ -76,7 +77,7 @@ func (s *store) Append(item interface{}) (interface{}, error) {
 	}
 
 	var id interface{}
-	if id, err = s.Collection.Append(item); err != nil {
+	if id, err = s.Collection.Insert(item); err != nil {
 		return nil, err
 	}
 
@@ -118,7 +119,7 @@ func (s *store) Save(item interface{}) error {
 			}
 		}
 
-		if id, err = s.Collection.Append(item); err != nil {
+		if id, err = s.Collection.Insert(item); err != nil {
 			return err
 		}
 
@@ -175,7 +176,7 @@ func (s *store) Delete(item interface{}) error {
 		}
 	}
 
-	if err = s.Collection.Find(db.Cond{idKey: id}).Remove(); err != nil {
+	if err = s.Collection.Find(db.Cond{idKey: id}).Delete(); err != nil {
 		return err
 	}
 
