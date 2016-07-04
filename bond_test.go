@@ -263,109 +263,134 @@ func TestSelectOnlyIDs(t *testing.T) {
 }
 
 func TestTransaction(t *testing.T) {
-	tx, err := DB.Tx()
-	assert.NoError(t, err)
+	var err error
 
-	// Should fail because user is a UNIQUE value and we already have a "peter".
-	err = DB.User.Tx(tx).Save(&User{Username: "peter"})
+	// This transaction should fail because user is a UNIQUE value and we already
+	// have a "peter".
+	err = DB.Tx(func(sess bond.Session) error {
+		return sess.Save(&User{Username: "peter"})
+	})
 	assert.Error(t, err)
 
-	// Ok, rolling back.
-	err = tx.Rollback()
+	// This transaction should fail because user is a UNIQUE value and we already
+	// have a "peter".
+	err = DB.Tx(func(sess bond.Session) error {
+		return DB.User.With(sess).Save(&User{Username: "peter"})
+	})
+	assert.Error(t, err)
+
+	// This transaction will have no errors, but we'll produce one in order for
+	// it to rollback at the last moment.
+	err = DB.Tx(func(sess bond.Session) error {
+		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
+			return err
+		}
+
+		if err := sess.Save(&User{Username: "Cool"}); err != nil {
+			return err
+		}
+
+		return fmt.Errorf("Rolling back for no reason.")
+	})
+	assert.Error(t, err)
+
+	// Attempt to add two new unique values, if the transaction above had not
+	// been rolled back this transaction will fail.
+	err = DB.Tx(func(sess bond.Session) error {
+		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
+			return err
+		}
+
+		if err := sess.Save(&User{Username: "Cool"}); err != nil {
+			return err
+		}
+
+		return nil
+	})
 	assert.NoError(t, err)
 
-	// Start again.
-	tx, err = DB.Tx()
+	// If the transaction above was successful, this one will fail.
+	err = DB.Tx(func(sess bond.Session) error {
+		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
+			return err
+		}
 
-	// Attempt to add two new unique values.
-	err = DB.User.Tx(tx).Save(&User{Username: "Joe"})
-	assert.NoError(t, err)
+		if err := sess.Save(&User{Username: "Cool"}); err != nil {
+			return err
+		}
 
-	err = tx.Save(&User{Username: "Cool"})
-	assert.NoError(t, err)
-
-	// And a value that is going to be rolled back.
-	err = tx.Save(&Account{Name: "Rolled back"})
-	assert.NoError(t, err)
-
-	// Nope!
-	err = tx.Rollback()
-	assert.NoError(t, err)
-
-	// Start again.
-	tx, err = DB.Tx()
-	assert.NoError(t, err)
-
-	// Attempt to add two unique values.
-	err = DB.User.Tx(tx).Save(&User{Username: "Joe"})
-	assert.NoError(t, err)
-
-	err = tx.Save(&User{Username: "Cool"})
-	assert.NoError(t, err)
-
-	// And a value that is going to be commited.
-	err = tx.Save(&Account{Name: "Commited!"})
-	assert.NoError(t, err)
-
-	// Yes, commit them.
-	err = tx.Commit()
-	assert.NoError(t, err)
+		return nil
+	})
+	assert.Error(t, err)
 }
 
 func TestTransactionWithNormalTx(t *testing.T) {
 	drv := DB.Driver()
+	sqlDB := drv.(*sql.DB)
 
-	tx, err := drv.(*sql.DB).Begin()
+	sqlTx, err := sqlDB.Begin()
+	assert.NoError(t, err)
+
+	dbSess, err := postgresql.New(sqlDB)
+	assert.NoError(t, err)
+
+	dbTx, err := dbSess.UseTransaction(sqlTx)
+	assert.NoError(t, err)
+
+	sess, err := bond.New(dbTx)
 	assert.NoError(t, err)
 
 	// Should fail because user is a UNIQUE value and we already have a "peter".
-	err = DB.User.Tx(tx).Save(&User{Username: "peter"})
+	err = DB.User.With(sess).Save(&User{Username: "peter"})
 	assert.Error(t, err)
 
 	// Ok, rolling back.
-	err = tx.Rollback()
+	err = dbTx.Rollback()
 	assert.NoError(t, err)
 
-	// Start again.
-	tx, err = drv.(*sql.DB).Begin()
-	userTx := DB.User.Tx(tx)
-
-	// Attempt to add two new unique values.
-	err = userTx.Save(&User{Username: "Joe-2"})
+	// Start again with a new transaction.
+	sqlTx, err = sqlDB.Begin()
 	assert.NoError(t, err)
 
-	err = userTx.Save(&User{Username: "Cool-2"})
-	assert.NoError(t, err)
+	/*
+		// Start again.
+		tx, err = drv.(*sql.DB).Begin()
+		userTx := DB.User.With(tx)
 
-	// And a value that is going to be rolled back.
-	err = DB.Account.Tx(tx).Save(&Account{Name: "Rolled back"})
-	assert.NoError(t, err)
+		// Attempt to add two new unique values.
+		err = userTx.Save(&User{Username: "Joe-2"})
+		assert.NoError(t, err)
 
-	// Nope!
-	err = tx.Rollback()
-	assert.NoError(t, err)
+		err = userTx.Save(&User{Username: "Cool-2"})
+		assert.NoError(t, err)
 
-	// Start again.
-	tx, err = drv.(*sql.DB).Begin()
-	assert.NoError(t, err)
+		// And a value that is going to be rolled back.
+		err = DB.Account.With(tx).Save(&Account{Name: "Rolled back"})
+		assert.NoError(t, err)
 
-	userTx = DB.User.Tx(tx)
+		// Nope!
+		err = tx.Rollback()
+		assert.NoError(t, err)
 
-	// Attempt to add two unique values.
-	err = userTx.Save(&User{Username: "Joe-2"})
-	assert.NoError(t, err)
+		// Start again.
+		tx, err = drv.(*sql.DB).Begin()
+		assert.NoError(t, err)
 
-	err = userTx.Save(&User{Username: "Cool-2"})
-	assert.NoError(t, err)
+		userTx = DB.User.With(tx)
 
-	// And a value that is going to be commited.
-	err = DB.Account.Tx(tx).Save(&Account{Name: "Commited!"})
-	assert.NoError(t, err)
+		// Attempt to add two unique values.
+		err = userTx.Save(&User{Username: "Joe-2"})
+		assert.NoError(t, err)
 
-	// Yes, commit them.
-	err = tx.Commit()
-	assert.NoError(t, err)
+		err = userTx.Save(&User{Username: "Cool-2"})
+		assert.NoError(t, err)
+
+		// And a value that is going to be commited.
+		err = DB.Account.With(tx).Save(&Account{Name: "Commited!"})
+		assert.NoError(t, err)
+
+		// Yes, commit them.
+		err = tx.Commit()
+		assert.NoError(t, err)
+	*/
 }
-
-// TODO:
-// make a test with a join example...

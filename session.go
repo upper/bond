@@ -9,13 +9,14 @@ import (
 )
 
 type Session interface {
-	postgresql.Tx
+	postgresql.Database
+
 	Store(interface{}) Store
 	Find(...interface{}) db.Result
 	Save(Model) error
 	Delete(Model) error
-	Tx() (Session, error)
-	ContinueTransaction() (Session, error, bool)
+	Tx(func(tx Session) error) error
+	//ContinueTransaction() (Session, error, bool)
 }
 
 type session struct {
@@ -30,10 +31,26 @@ func Open(adapter string, url db.ConnectionURL) (Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	return New(conn)
+}
 
+// New returns a new session.
+func New(conn postgresql.Database) (Session, error) {
 	return &session{Database: conn, stores: make(map[string]*store)}, nil
 }
 
+func (s *session) Tx(fn func(tx Session) error) error {
+	txFn := func(tx postgresql.Tx) error {
+		sess := &session{
+			Database: tx,
+			stores:   make(map[string]*store),
+		}
+		return fn(sess)
+	}
+	return s.Database.Transaction(txFn)
+}
+
+/*
 // Tx creates and returns a session that runs within a transaction
 // block. It will fail if called inside another transaction
 func (s *session) Tx() (Session, error) {
@@ -49,6 +66,7 @@ func (s *session) Tx() (Session, error) {
 
 	return sess, nil
 }
+*/
 
 // ContinueTransaction creates and returns a session that runs within a
 // transaction block. If called within another transaction block it will reuse

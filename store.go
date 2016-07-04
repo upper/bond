@@ -3,58 +3,27 @@ package bond
 import (
 	"reflect"
 
-	"database/sql"
 	"upper.io/db.v2"
-	"upper.io/db.v2/postgresql" // TODO: Figure out how to remove this and make it generic.
 )
 
 type Store interface {
 	db.Collection
+
 	Session() Session
 	Save(interface{}) error
 	Delete(interface{}) error
-	Tx(interface{}) Store
+	With(sess Session) Store
 }
 
 type store struct {
 	db.Collection
+
 	session Session
 }
 
-// Tx returns a copy of the store that runs in the context of the given
+// With returns a copy of the store that runs in the context of the given
 // transaction.
-func (s *store) Tx(tx interface{}) Store {
-	var sess Session
-
-	switch v := tx.(type) {
-	case postgresql.Tx:
-		sess = &session{
-			Database: v,
-		}
-	case postgresql.Database:
-		sess = &session{
-			Database: v,
-		}
-	case *sql.DB:
-		clone, _ := s.Session().With(v)
-		sess = &session{
-			Database: clone,
-		}
-	case *sql.Tx:
-		clone, _ := s.Session().With(v)
-		sess = &session{
-			Database: clone,
-		}
-	case Session:
-		sess = v
-	default:
-		panic("Unknown session type.")
-	}
-
-	if sess.(*session).stores == nil {
-		sess.(*session).stores = make(map[string]*store)
-	}
-
+func (s *store) With(sess Session) Store {
 	return &store{
 		Collection: sess.(*session).Database.Collection(s.Collection.Name()),
 		session:    sess,
