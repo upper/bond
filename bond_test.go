@@ -104,7 +104,7 @@ func init() {
 	var err error
 	DB = &database{}
 
-	DB.Session, err = bond.Open(`postgresql`, postgresql.ConnectionURL{
+	DB.Session, err = bond.Open(postgresql.ConnectionURL{
 		Host:     testHost,
 		User:     "bond_user",
 		Database: "bond_test",
@@ -267,21 +267,21 @@ func TestTransaction(t *testing.T) {
 
 	// This transaction should fail because user is a UNIQUE value and we already
 	// have a "peter".
-	err = DB.Tx(func(sess bond.Session) error {
+	err = DB.BondTx(func(sess bond.Session) error {
 		return sess.Save(&User{Username: "peter"})
 	})
 	assert.Error(t, err)
 
 	// This transaction should fail because user is a UNIQUE value and we already
 	// have a "peter".
-	err = DB.Tx(func(sess bond.Session) error {
+	err = DB.BondTx(func(sess bond.Session) error {
 		return DB.User.With(sess).Save(&User{Username: "peter"})
 	})
 	assert.Error(t, err)
 
 	// This transaction will have no errors, but we'll produce one in order for
 	// it to rollback at the last moment.
-	err = DB.Tx(func(sess bond.Session) error {
+	err = DB.BondTx(func(sess bond.Session) error {
 		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
 			return err
 		}
@@ -296,7 +296,7 @@ func TestTransaction(t *testing.T) {
 
 	// Attempt to add two new unique values, if the transaction above had not
 	// been rolled back this transaction will fail.
-	err = DB.Tx(func(sess bond.Session) error {
+	err = DB.BondTx(func(sess bond.Session) error {
 		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
 			return err
 		}
@@ -310,7 +310,7 @@ func TestTransaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// If the transaction above was successful, this one will fail.
-	err = DB.Tx(func(sess bond.Session) error {
+	err = DB.BondTx(func(sess bond.Session) error {
 		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
 			return err
 		}
@@ -324,73 +324,87 @@ func TestTransaction(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestTransactionWithNormalTx(t *testing.T) {
-	drv := DB.Driver()
+func TestInheritedTransaction(t *testing.T) {
+	anoterSess, err := bond.Open(postgresql.ConnectionURL{
+		Host:     testHost,
+		User:     "bond_user",
+		Database: "bond_test",
+	})
+	assert.NoError(t, err)
+	defer anoterSess.Close()
+
+	// This is a normal SQL database.
+	drv := anoterSess.Driver()
 	sqlDB := drv.(*sql.DB)
 
+	// We create a transaction on this SQL database.
 	sqlTx, err := sqlDB.Begin()
 	assert.NoError(t, err)
 
-	dbSess, err := postgresql.New(sqlDB)
-	assert.NoError(t, err)
-
-	dbTx, err := dbSess.UseTransaction(sqlTx)
-	assert.NoError(t, err)
-
-	sess, err := bond.New(dbTx)
+	// And pass that transaction to bond, this whole session is a transaction.
+	sess, err := bond.New(postgresql.Adapter, sqlTx)
 	assert.NoError(t, err)
 
 	// Should fail because user is a UNIQUE value and we already have a "peter".
 	err = DB.User.With(sess).Save(&User{Username: "peter"})
 	assert.Error(t, err)
 
-	// Ok, rolling back.
-	err = dbTx.Rollback()
+	// The transaction is controlled outside bond.
+	err = sqlTx.Rollback()
 	assert.NoError(t, err)
 
-	// Start again with a new transaction.
+	// The sqlTx is worthless now.
+	err = DB.User.With(sess).Save(&User{Username: "peter-2"})
+	assert.Error(t, err)
+
+	// But we can create a new one.
+	sqlTx, err = sqlDB.Begin()
+	assert.NoError(t, err)
+	assert.NotNil(t, sqlTx)
+
+	// And create another bond session.
+	sess, err = bond.New(postgresql.Adapter, sqlTx)
+	assert.NoError(t, err)
+
+	// This model uses the given session to do stuff.
+	userTx := DB.User.With(sess)
+
+	// Adding two new values.
+	err = userTx.Save(&User{Username: "Joe-2"})
+	assert.NoError(t, err)
+
+	err = userTx.Save(&User{Username: "Cool-2"})
+	assert.NoError(t, err)
+
+	// And a value that is going to be rolled back.
+	err = DB.Account.With(sess).Save(&Account{Name: "Rolled back"})
+	assert.NoError(t, err)
+
+	// This session happens to be a transaction, let's rollback everything.
+	err = sqlTx.Rollback()
+	assert.NoError(t, err)
+
+	// Start again.
 	sqlTx, err = sqlDB.Begin()
 	assert.NoError(t, err)
 
-	/*
-		// Start again.
-		tx, err = drv.(*sql.DB).Begin()
-		userTx := DB.User.With(tx)
+	sess, err = bond.New(postgresql.Adapter, sqlTx)
+	assert.NoError(t, err)
 
-		// Attempt to add two new unique values.
-		err = userTx.Save(&User{Username: "Joe-2"})
-		assert.NoError(t, err)
+	userTx = DB.User.With(sess)
 
-		err = userTx.Save(&User{Username: "Cool-2"})
-		assert.NoError(t, err)
+	// Attempt to add two unique values.
+	err = userTx.Save(&User{Username: "Joe-2"})
+	assert.NoError(t, err)
 
-		// And a value that is going to be rolled back.
-		err = DB.Account.With(tx).Save(&Account{Name: "Rolled back"})
-		assert.NoError(t, err)
+	err = userTx.Save(&User{Username: "Cool-2"})
+	assert.NoError(t, err)
 
-		// Nope!
-		err = tx.Rollback()
-		assert.NoError(t, err)
+	// And a value that is going to be commited.
+	err = DB.Account.With(sess).Save(&Account{Name: "Commited!"})
+	assert.NoError(t, err)
 
-		// Start again.
-		tx, err = drv.(*sql.DB).Begin()
-		assert.NoError(t, err)
-
-		userTx = DB.User.With(tx)
-
-		// Attempt to add two unique values.
-		err = userTx.Save(&User{Username: "Joe-2"})
-		assert.NoError(t, err)
-
-		err = userTx.Save(&User{Username: "Cool-2"})
-		assert.NoError(t, err)
-
-		// And a value that is going to be commited.
-		err = DB.Account.With(tx).Save(&Account{Name: "Commited!"})
-		assert.NoError(t, err)
-
-		// Yes, commit them.
-		err = tx.Commit()
-		assert.NoError(t, err)
-	*/
+	// Yes, commit them.
+	err = sqlTx.Commit()
+	assert.NoError(t, err)
 }

@@ -25,7 +25,7 @@ type store struct {
 // transaction.
 func (s *store) With(sess Session) Store {
 	return &store{
-		Collection: sess.(*session).Database.Collection(s.Collection.Name()),
+		Collection: sess.(*session).SQLDatabase.Collection(s.Collection.Name()),
 		session:    sess,
 	}
 }

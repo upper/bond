@@ -1,112 +1,77 @@
 package bond
 
 import (
+	"database/sql"
+	"fmt"
 	"reflect"
 	"sync"
 
 	"upper.io/db.v2"
-	"upper.io/db.v2/postgresql" // TODO: Figure out how to remove this and make it generic.
+	"upper.io/db.v2/lib"
 )
 
 type Session interface {
-	postgresql.Database
+	lib.SQLDatabase
 
 	Store(interface{}) Store
 	Find(...interface{}) db.Result
 	Save(Model) error
 	Delete(Model) error
-	Tx(func(tx Session) error) error
-	//ContinueTransaction() (Session, error, bool)
+
+	BondTx(func(tx Session) error) error
 }
 
 type session struct {
-	postgresql.Database
+	lib.SQLDatabase
 	stores     map[string]*store
 	storesLock sync.Mutex
 }
 
 // Open connects to a database.
-func Open(adapter string, url db.ConnectionURL) (Session, error) {
-	conn, err := postgresql.Open(url)
+func Open(url db.ConnectionURL) (Session, error) {
+	adapter := url.Adapter()
+	conn, err := lib.Adapter(adapter).Open(url)
 	if err != nil {
 		return nil, err
 	}
-	return New(conn)
+	return New(adapter, conn)
 }
 
 // New returns a new session.
-func New(conn postgresql.Database) (Session, error) {
-	return &session{Database: conn, stores: make(map[string]*store)}, nil
-}
+func New(adapter string, backend interface{}) (Session, error) {
+	var conn lib.SQLDatabase // which is an interface.
 
-func (s *session) Tx(fn func(tx Session) error) error {
-	txFn := func(tx postgresql.Tx) error {
-		sess := &session{
-			Database: tx,
-			stores:   make(map[string]*store),
-		}
-		return fn(sess)
-	}
-	return s.Database.Transaction(txFn)
-}
-
-/*
-// Tx creates and returns a session that runs within a transaction
-// block. It will fail if called inside another transaction
-func (s *session) Tx() (Session, error) {
-	tx, err := s.Database.NewTransaction()
-	if err != nil {
-		return nil, err
-	}
-
-	sess := &session{
-		Database: tx,
-		stores:   make(map[string]*store),
-	}
-
-	return sess, nil
-}
-*/
-
-// ContinueTransaction creates and returns a session that runs within a
-// transaction block. If called within another transaction block it will reuse
-// the transaction in progress, if not it will start a new transaction.
-// The 3rd returned value indicates if a session was continued (true) or not
-func (s *session) ContinueTransaction() (Session, error, bool) {
-	// check if called within a transaction
-	tx, inTransaction := s.Database.(postgresql.Tx)
-
-	// if not start a new one
-	if !inTransaction {
+	switch t := backend.(type) {
+	case lib.SQLTx:
+		conn = t
+	case lib.SQLDatabase:
+		conn = t
+	case *sql.Tx:
 		var err error
-		tx, err = s.Database.NewTransaction()
+		conn, err = lib.Adapter(adapter).NewTx(t)
 		if err != nil {
-			return nil, err, false
+			return nil, err
 		}
+	case *sql.DB:
+		var err error
+		conn, err = lib.Adapter(adapter).New(t)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("Unknown backend type: %T", t)
 	}
-
-	sess := &session{
-		Database: tx,
-		stores:   make(map[string]*store),
-	}
-
-	return sess, nil, inTransaction
+	return &session{SQLDatabase: conn, stores: make(map[string]*store)}, nil
 }
 
-// Commit commits the current transaction.
-func (s *session) Commit() error {
-	if tx, ok := s.Database.(postgresql.Tx); ok {
-		return tx.Commit()
+func (s *session) BondTx(fn func(sess Session) error) error {
+	txFn := func(sess lib.SQLTx) error {
+		return fn(&session{
+			SQLDatabase: sess,
+			stores:      make(map[string]*store),
+		})
 	}
-	return ErrMissingTransaction
-}
-
-// Rollback discards the current transaction.
-func (s *session) Rollback() error {
-	if tx, ok := s.Database.(postgresql.Tx); ok {
-		return tx.Rollback()
-	}
-	return ErrMissingTransaction
+	return s.SQLDatabase.Tx(txFn)
 }
 
 func (s *session) Store(item interface{}) Store {
@@ -163,7 +128,7 @@ func (s *session) getStore(item interface{}) *store {
 		return store
 	}
 
-	store := &store{Collection: s.Database.Collection(colName), session: s}
+	store := &store{Collection: s.SQLDatabase.Collection(colName), session: s}
 	s.stores[colName] = store
 	return store
 }
