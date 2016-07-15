@@ -7,11 +7,16 @@ import (
 	"sync"
 
 	"upper.io/db.v2"
-	"upper.io/db.v2/lib"
 )
 
+// SQLDatabase represents a normal session and transaction session.
+type SQLDatabase interface {
+	db.Database
+	db.SQLBuilder
+}
+
 type Session interface {
-	lib.SQLDatabase
+	SQLDatabase
 
 	Store(interface{}) Store
 	Find(...interface{}) db.Result
@@ -22,15 +27,14 @@ type Session interface {
 }
 
 type session struct {
-	lib.SQLDatabase
+	SQLDatabase
 	stores     map[string]*store
 	storesLock sync.Mutex
 }
 
 // Open connects to a database.
-func Open(url db.ConnectionURL) (Session, error) {
-	adapter := url.Adapter()
-	conn, err := lib.Adapter(adapter).Open(url)
+func Open(adapter string, url db.ConnectionURL) (Session, error) {
+	conn, err := db.SQLAdapter(adapter).Open(url)
 	if err != nil {
 		return nil, err
 	}
@@ -39,22 +43,20 @@ func Open(url db.ConnectionURL) (Session, error) {
 
 // New returns a new session.
 func New(adapter string, backend interface{}) (Session, error) {
-	var conn lib.SQLDatabase // which is an interface.
+	var conn SQLDatabase
 
 	switch t := backend.(type) {
-	case lib.SQLTx:
-		conn = t
-	case lib.SQLDatabase:
+	case SQLDatabase:
 		conn = t
 	case *sql.Tx:
 		var err error
-		conn, err = lib.Adapter(adapter).NewTx(t)
+		conn, err = db.SQLAdapter(adapter).NewTx(t)
 		if err != nil {
 			return nil, err
 		}
 	case *sql.DB:
 		var err error
-		conn, err = lib.Adapter(adapter).New(t)
+		conn, err = db.SQLAdapter(adapter).New(t)
 		if err != nil {
 			return nil, err
 		}
@@ -65,13 +67,25 @@ func New(adapter string, backend interface{}) (Session, error) {
 }
 
 func (s *session) BondTx(fn func(sess Session) error) error {
-	txFn := func(sess lib.SQLTx) error {
+	txFn := func(sess db.SQLTx) error {
 		return fn(&session{
 			SQLDatabase: sess,
 			stores:      make(map[string]*store),
 		})
 	}
-	return s.SQLDatabase.Tx(txFn)
+
+	switch t := s.SQLDatabase.(type) {
+	case db.SQLDatabase:
+		return t.Tx(txFn)
+	case db.SQLTx:
+		defer t.Close()
+		err := txFn(t)
+		if err != nil {
+			return t.Rollback()
+		}
+		return t.Commit()
+	}
+	panic("reached")
 }
 
 func (s *session) Store(item interface{}) Store {

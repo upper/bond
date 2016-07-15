@@ -15,12 +15,16 @@ import (
 )
 
 var (
-	testHost string = `127.0.0.1`
+	DB           *database
+	connSettings postgresql.ConnectionURL
 )
 
-var (
-	DB *database
-)
+func pickDefault(env string, def string) string {
+	if v := os.Getenv(env); v != "" {
+		return v
+	}
+	return def
+}
 
 type database struct {
 	bond.Session
@@ -96,19 +100,17 @@ type UserStore struct {
 }
 
 func init() {
-	// os.Setenv("UPPERIO_DB_DEBUG", "1")
-	if os.Getenv("TEST_HOST") != "" {
-		testHost = os.Getenv("TEST_HOST")
+	connSettings = postgresql.ConnectionURL{
+		Host:     fmt.Sprintf("%s:%s", pickDefault("DB_HOST", "127.0.0.1"), pickDefault("DB_PORT", "5432")),
+		User:     pickDefault("BOND_USER", "bond_user"),
+		Database: pickDefault("BOND_DB", "bond_test"),
+		Password: pickDefault("BOND_PASSWORD", "bond_password"),
 	}
 
 	var err error
 	DB = &database{}
 
-	DB.Session, err = bond.Open(postgresql.ConnectionURL{
-		Host:     testHost,
-		User:     "bond_user",
-		Database: "bond_test",
-	})
+	DB.Session, err = bond.Open(postgresql.Adapter, connSettings)
 
 	if err != nil {
 		panic(err)
@@ -325,11 +327,7 @@ func TestTransaction(t *testing.T) {
 }
 
 func TestInheritedTransaction(t *testing.T) {
-	anoterSess, err := bond.Open(postgresql.ConnectionURL{
-		Host:     testHost,
-		User:     "bond_user",
-		Database: "bond_test",
-	})
+	anoterSess, err := bond.Open(postgresql.Adapter, connSettings)
 	assert.NoError(t, err)
 	defer anoterSess.Close()
 
