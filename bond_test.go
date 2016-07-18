@@ -269,21 +269,21 @@ func TestTransaction(t *testing.T) {
 
 	// This transaction should fail because user is a UNIQUE value and we already
 	// have a "peter".
-	err = DB.BondTx(func(sess bond.Session) error {
+	err = DB.SessionTx(func(sess bond.Session) error {
 		return sess.Save(&User{Username: "peter"})
 	})
 	assert.Error(t, err)
 
 	// This transaction should fail because user is a UNIQUE value and we already
 	// have a "peter".
-	err = DB.BondTx(func(sess bond.Session) error {
+	err = DB.SessionTx(func(sess bond.Session) error {
 		return DB.User.With(sess).Save(&User{Username: "peter"})
 	})
 	assert.Error(t, err)
 
 	// This transaction will have no errors, but we'll produce one in order for
 	// it to rollback at the last moment.
-	err = DB.BondTx(func(sess bond.Session) error {
+	err = DB.SessionTx(func(sess bond.Session) error {
 		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
 			return err
 		}
@@ -298,7 +298,7 @@ func TestTransaction(t *testing.T) {
 
 	// Attempt to add two new unique values, if the transaction above had not
 	// been rolled back this transaction will fail.
-	err = DB.BondTx(func(sess bond.Session) error {
+	err = DB.SessionTx(func(sess bond.Session) error {
 		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
 			return err
 		}
@@ -312,7 +312,7 @@ func TestTransaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// If the transaction above was successful, this one will fail.
-	err = DB.BondTx(func(sess bond.Session) error {
+	err = DB.SessionTx(func(sess bond.Session) error {
 		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
 			return err
 		}

@@ -23,7 +23,7 @@ type Session interface {
 	Save(Model) error
 	Delete(Model) error
 
-	BondTx(func(tx Session) error) error
+	SessionTx(func(tx Session) error) error
 }
 
 type session struct {
@@ -66,7 +66,7 @@ func New(adapter string, backend interface{}) (Session, error) {
 	return &session{SQLDatabase: conn, stores: make(map[string]*store)}, nil
 }
 
-func (s *session) BondTx(fn func(sess Session) error) error {
+func (s *session) SessionTx(fn func(sess Session) error) error {
 	txFn := func(sess db.SQLTx) error {
 		return fn(&session{
 			SQLDatabase: sess,
