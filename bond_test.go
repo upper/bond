@@ -110,12 +110,12 @@ func init() {
 	var err error
 	DB = &database{}
 
-	DB.Session, err = bond.Open(postgresql.Adapter, connSettings)
-
+	sess, err := postgresql.Open(connSettings)
 	if err != nil {
 		panic(err)
 	}
 
+	DB.Session = bond.New(sess)
 	DB.Account = AccountStore{Store: DB.Store("accounts")}
 	DB.User = UserStore{Store: DB.Store("users")}
 	DB.Log = LogStore{Store: DB.Store("logs")}
@@ -340,7 +340,7 @@ func TestInheritedTransaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// And pass that transaction to bond, this whole session is a transaction.
-	sess, err := bond.New(postgresql.Adapter, sqlTx)
+	sess, err := bond.Bind(postgresql.Adapter, sqlTx)
 	assert.NoError(t, err)
 
 	// Should fail because user is a UNIQUE value and we already have a "peter".
@@ -361,7 +361,7 @@ func TestInheritedTransaction(t *testing.T) {
 	assert.NotNil(t, sqlTx)
 
 	// And create another bond session.
-	sess, err = bond.New(postgresql.Adapter, sqlTx)
+	sess, err = bond.Bind(postgresql.Adapter, sqlTx)
 	assert.NoError(t, err)
 
 	// This model uses the given session to do stuff.
@@ -386,7 +386,7 @@ func TestInheritedTransaction(t *testing.T) {
 	sqlTx, err = sqlDB.Begin()
 	assert.NoError(t, err)
 
-	sess, err = bond.New(postgresql.Adapter, sqlTx)
+	sess, err = bond.Bind(postgresql.Adapter, sqlTx)
 	assert.NoError(t, err)
 
 	userTx = DB.User.With(sess)

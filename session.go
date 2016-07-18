@@ -9,14 +9,22 @@ import (
 	"upper.io/db.v2"
 )
 
-// SQLDatabase represents a normal session and transaction session.
-type SQLDatabase interface {
+// SQLSession represents both db.SQLDatabase and db.SQLTx interfaces.
+type SQLSession interface {
 	db.Database
 	db.SQLBuilder
 }
 
+// SQLBackend represents both *sql.Tx and *sql.DB.
+type SQLBackend interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+	Prepare(query string) (*sql.Stmt, error)
+	Query(query string, args ...interface{}) (*sql.Rows, error)
+	QueryRow(query string, args ...interface{}) *sql.Row
+}
+
 type Session interface {
-	SQLDatabase
+	SQLSession
 
 	Store(interface{}) Store
 	Find(...interface{}) db.Result
@@ -27,7 +35,7 @@ type Session interface {
 }
 
 type session struct {
-	SQLDatabase
+	SQLSession
 	stores     map[string]*store
 	storesLock sync.Mutex
 }
@@ -38,16 +46,20 @@ func Open(adapter string, url db.ConnectionURL) (Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return New(adapter, conn)
+	return New(conn), nil
 }
 
 // New returns a new session.
-func New(adapter string, backend interface{}) (Session, error) {
-	var conn SQLDatabase
+func New(conn SQLSession) Session {
+	return &session{SQLSession: conn, stores: make(map[string]*store)}
+}
+
+// Bind binds to an existent database session. Possible backend values are:
+// *sql.Tx or *sql.DB.
+func Bind(adapter string, backend SQLBackend) (Session, error) {
+	var conn SQLSession
 
 	switch t := backend.(type) {
-	case SQLDatabase:
-		conn = t
 	case *sql.Tx:
 		var err error
 		conn, err = db.SQLAdapter(adapter).NewTx(t)
@@ -63,18 +75,18 @@ func New(adapter string, backend interface{}) (Session, error) {
 	default:
 		return nil, fmt.Errorf("Unknown backend type: %T", t)
 	}
-	return &session{SQLDatabase: conn, stores: make(map[string]*store)}, nil
+	return &session{SQLSession: conn, stores: make(map[string]*store)}, nil
 }
 
 func (s *session) SessionTx(fn func(sess Session) error) error {
 	txFn := func(sess db.SQLTx) error {
 		return fn(&session{
-			SQLDatabase: sess,
-			stores:      make(map[string]*store),
+			SQLSession: sess,
+			stores:     make(map[string]*store),
 		})
 	}
 
-	switch t := s.SQLDatabase.(type) {
+	switch t := s.SQLSession.(type) {
 	case db.SQLDatabase:
 		return t.Tx(txFn)
 	case db.SQLTx:
@@ -142,7 +154,7 @@ func (s *session) getStore(item interface{}) *store {
 		return store
 	}
 
-	store := &store{Collection: s.SQLDatabase.Collection(colName), session: s}
+	store := &store{Collection: s.SQLSession.Collection(colName), session: s}
 	s.stores[colName] = store
 	return store
 }
