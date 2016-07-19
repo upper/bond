@@ -3,8 +3,6 @@ sudo: false
 language: go
 
 go:
-  - 1.4
-  - 1.5
   - 1.6
 
 addons:
@@ -14,7 +12,7 @@ env: GOARCH=amd64 TEST_HOST=127.0.0.1
 
 install:
   - go get -v -t -d
-  - (cd $GOPATH/src/upper.io/db && git pull -a && git checkout 7584838539e356b872798dce22e96acd78031cff && go build && go install) # temporal fix
+  - (cd $GOPATH/src/upper.io/db.v2 && git pull -a && git checkout 8441be0e450c8731e48efb1b15eb39fc0a02813e && go build && go install) # temporal fix
 
 script:
   - rm -rf $GOPATH/src/upper.io/bond
