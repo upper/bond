@@ -7,13 +7,8 @@ import (
 	"sync"
 
 	"upper.io/db.v2"
+	"upper.io/db.v2/sqlbuilder"
 )
-
-// SQLSession represents both db.SQLDatabase and db.SQLTx interfaces.
-type SQLSession interface {
-	db.Database
-	db.SQLBuilder
-}
 
 // SQLBackend represents both *sql.Tx and *sql.DB.
 type SQLBackend interface {
@@ -24,7 +19,7 @@ type SQLBackend interface {
 }
 
 type Session interface {
-	SQLSession
+	builder.Backend
 
 	Store(interface{}) Store
 	Find(...interface{}) db.Result
@@ -35,14 +30,15 @@ type Session interface {
 }
 
 type session struct {
-	SQLSession
+	builder.Backend
+
 	stores     map[string]*store
 	storesLock sync.Mutex
 }
 
 // Open connects to a database.
 func Open(adapter string, url db.ConnectionURL) (Session, error) {
-	conn, err := db.SQLAdapter(adapter).Open(url)
+	conn, err := builder.Open(adapter, url)
 	if err != nil {
 		return nil, err
 	}
@@ -50,46 +46,46 @@ func Open(adapter string, url db.ConnectionURL) (Session, error) {
 }
 
 // New returns a new session.
-func New(conn SQLSession) Session {
-	return &session{SQLSession: conn, stores: make(map[string]*store)}
+func New(conn builder.Backend) Session {
+	return &session{Backend: conn, stores: make(map[string]*store)}
 }
 
 // Bind binds to an existent database session. Possible backend values are:
 // *sql.Tx or *sql.DB.
 func Bind(adapter string, backend SQLBackend) (Session, error) {
-	var conn SQLSession
+	var conn builder.Backend
 
 	switch t := backend.(type) {
 	case *sql.Tx:
 		var err error
-		conn, err = db.SQLAdapter(adapter).NewTx(t)
+		conn, err = builder.NewTx(adapter, t)
 		if err != nil {
 			return nil, err
 		}
 	case *sql.DB:
 		var err error
-		conn, err = db.SQLAdapter(adapter).New(t)
+		conn, err = builder.New(adapter, t)
 		if err != nil {
 			return nil, err
 		}
 	default:
 		return nil, fmt.Errorf("Unknown backend type: %T", t)
 	}
-	return &session{SQLSession: conn, stores: make(map[string]*store)}, nil
+	return &session{Backend: conn, stores: make(map[string]*store)}, nil
 }
 
 func (s *session) SessionTx(fn func(sess Session) error) error {
-	txFn := func(sess db.SQLTx) error {
+	txFn := func(sess builder.Tx) error {
 		return fn(&session{
-			SQLSession: sess,
-			stores:     make(map[string]*store),
+			Backend: sess,
+			stores:  make(map[string]*store),
 		})
 	}
 
-	switch t := s.SQLSession.(type) {
-	case db.SQLDatabase:
+	switch t := s.Backend.(type) {
+	case builder.Database:
 		return t.Tx(txFn)
-	case db.SQLTx:
+	case builder.Tx:
 		defer t.Close()
 		err := txFn(t)
 		if err != nil {
@@ -154,7 +150,7 @@ func (s *session) getStore(item interface{}) *store {
 		return store
 	}
 
-	store := &store{Collection: s.SQLSession.Collection(colName), session: s}
+	store := &store{Collection: s.Collection(colName), session: s}
 	s.stores[colName] = store
 	return store
 }
