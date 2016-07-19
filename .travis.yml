@@ -12,7 +12,7 @@ env: GOARCH=amd64 TEST_HOST=127.0.0.1
 
 install:
   - go get -v -t -d
-  - (cd $GOPATH/src/upper.io/db.v2 && git pull -a && git checkout 8441be0e450c8731e48efb1b15eb39fc0a02813e && go build && go install) # temporal fix
+  - (cd $GOPATH/src/upper.io/db.v2 && git pull -a && git checkout f504838f1d55623f086f16bea9fa48d058468c1b && go build && go install) # temporal fix
 
 script:
   - rm -rf $GOPATH/src/upper.io/bond

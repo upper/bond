@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"upper.io/db.v2"
-	"upper.io/db.v2/sqlbuilder"
+	"upper.io/db.v2/lib/sqlbuilder"
 )
 
 // SQLBackend represents both *sql.Tx and *sql.DB.
