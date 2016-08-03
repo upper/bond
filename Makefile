@@ -1,6 +1,6 @@
 DB_HOST      ?= 127.0.0.1
 DB_PORT      ?= 5432
-DB_USER      ?=
+DB_USER      ?= postgres
 DB_PASSWORD  ?=
 
 BOND_USER       ?= bond_user
