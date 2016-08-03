@@ -1,7 +1,7 @@
 DB_HOST      ?= 127.0.0.1
 DB_PORT      ?= 5432
-DB_USER      ?= upperio_tests
-DB_PASSWORD  ?= upperio_secret
+DB_USER      ?=
+DB_PASSWORD  ?=
 
 BOND_USER       ?= bond_user
 BOND_DB         ?= bond_test
