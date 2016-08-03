@@ -19,7 +19,7 @@ type SQLBackend interface {
 }
 
 type Session interface {
-	builder.Backend
+	sqlbuilder.Backend
 
 	Store(interface{}) Store
 	Find(...interface{}) db.Result
@@ -30,7 +30,7 @@ type Session interface {
 }
 
 type session struct {
-	builder.Backend
+	sqlbuilder.Backend
 
 	stores     map[string]*store
 	storesLock sync.Mutex
@@ -38,7 +38,7 @@ type session struct {
 
 // Open connects to a database.
 func Open(adapter string, url db.ConnectionURL) (Session, error) {
-	conn, err := builder.Open(adapter, url)
+	conn, err := sqlbuilder.Open(adapter, url)
 	if err != nil {
 		return nil, err
 	}
@@ -46,25 +46,25 @@ func Open(adapter string, url db.ConnectionURL) (Session, error) {
 }
 
 // New returns a new session.
-func New(conn builder.Backend) Session {
+func New(conn sqlbuilder.Backend) Session {
 	return &session{Backend: conn, stores: make(map[string]*store)}
 }
 
 // Bind binds to an existent database session. Possible backend values are:
 // *sql.Tx or *sql.DB.
 func Bind(adapter string, backend SQLBackend) (Session, error) {
-	var conn builder.Backend
+	var conn sqlbuilder.Backend
 
 	switch t := backend.(type) {
 	case *sql.Tx:
 		var err error
-		conn, err = builder.NewTx(adapter, t)
+		conn, err = sqlbuilder.NewTx(adapter, t)
 		if err != nil {
 			return nil, err
 		}
 	case *sql.DB:
 		var err error
-		conn, err = builder.New(adapter, t)
+		conn, err = sqlbuilder.New(adapter, t)
 		if err != nil {
 			return nil, err
 		}
@@ -75,7 +75,7 @@ func Bind(adapter string, backend SQLBackend) (Session, error) {
 }
 
 func (s *session) SessionTx(fn func(sess Session) error) error {
-	txFn := func(sess builder.Tx) error {
+	txFn := func(sess sqlbuilder.Tx) error {
 		return fn(&session{
 			Backend: sess,
 			stores:  make(map[string]*store),
@@ -83,9 +83,9 @@ func (s *session) SessionTx(fn func(sess Session) error) error {
 	}
 
 	switch t := s.Backend.(type) {
-	case builder.Database:
+	case sqlbuilder.Database:
 		return t.Tx(txFn)
-	case builder.Tx:
+	case sqlbuilder.Tx:
 		defer t.Close()
 		err := txFn(t)
 		if err != nil {

@@ -75,7 +75,6 @@ func (s *store) Create(item interface{}) error {
 	if err != nil {
 		return err
 	}
-
 	pkField.Set(reflect.ValueOf(id))
 
 	if m, ok := item.(HasAfterCreate); ok {
