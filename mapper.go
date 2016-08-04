@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/jmoiron/sqlx/reflectx"
+	"upper.io/db.v2/lib/reflectx"
 )
 
 var (

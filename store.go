@@ -3,90 +3,31 @@ package bond
 import (
 	"reflect"
 
-	"database/sql"
-	"upper.io/db"
+	"upper.io/db.v2"
 )
 
 type Store interface {
 	db.Collection
+
 	Session() Session
 	Save(interface{}) error
 	Delete(interface{}) error
-	Tx(interface{}) Store
+	With(sess Session) Store
 }
 
 type store struct {
 	db.Collection
+
 	session Session
 }
 
-// Tx returns a copy of the store that runs in the context of the given
+// With returns a copy of the store that runs in the context of the given
 // transaction.
-func (s *store) Tx(tx interface{}) Store {
-	var sess Session
-
-	switch v := tx.(type) {
-	case db.Tx:
-		sess = &session{
-			Database: v,
-		}
-	case db.Database:
-		sess = &session{
-			Database: v,
-		}
-	case *sql.DB:
-		clone, _ := s.Session().WithSession(v)
-		sess = &session{
-			Database: clone,
-		}
-	case *sql.Tx:
-		clone, _ := s.Session().WithSession(v)
-		sess = &session{
-			Database: clone,
-		}
-	case Session:
-		sess = v
-	default:
-		panic("Unknown session type.")
-	}
-
-	if sess.(*session).stores == nil {
-		sess.(*session).stores = make(map[string]*store)
-	}
-
+func (s *store) With(sess Session) Store {
 	return &store{
-		Collection: sess.(*session).Database.C(s.Collection.Name()),
+		Collection: sess.(*session).Collection(s.Collection.Name()),
 		session:    sess,
 	}
-}
-
-func (s *store) Append(item interface{}) (interface{}, error) {
-	var err error
-
-	if m, ok := item.(HasValidate); ok {
-		if err = m.Validate(); err != nil {
-			return nil, err
-		}
-	}
-
-	if m, ok := item.(HasBeforeCreate); ok {
-		if err = m.BeforeCreate(s.session); err != nil {
-			return nil, err
-		}
-	}
-
-	var id interface{}
-	if id, err = s.Collection.Append(item); err != nil {
-		return nil, err
-	}
-
-	if m, ok := item.(HasAfterCreate); ok {
-		if err = m.AfterCreate(s.session); err != nil {
-			return nil, err
-		}
-	}
-
-	return id, nil
 }
 
 func (s *store) Find(terms ...interface{}) db.Result {
@@ -110,7 +51,7 @@ func (s *store) Save(item interface{}) error {
 	id := pkField.Interface()
 
 	if id == structInfo.pkFieldInfo.Zero.Interface() {
-		return s.Insert(item)
+		return s.Create(item)
 	} else {
 		return s.Update(item)
 	}
@@ -118,7 +59,7 @@ func (s *store) Save(item interface{}) error {
 	return nil
 }
 
-func (s *store) Insert(item interface{}) error {
+func (s *store) Create(item interface{}) error {
 	pkField, _, err := structMapper.getPrimaryField(item)
 	if err != nil {
 		return err
@@ -130,11 +71,10 @@ func (s *store) Insert(item interface{}) error {
 		}
 	}
 
-	id, err := s.Collection.Append(item)
+	id, err := s.Collection.Insert(item)
 	if err != nil {
 		return err
 	}
-
 	pkField.Set(reflect.ValueOf(id))
 
 	if m, ok := item.(HasAfterCreate); ok {
@@ -192,7 +132,7 @@ func (s *store) Delete(item interface{}) error {
 		}
 	}
 
-	if err = s.Collection.Find(db.Cond{idKey: id}).Remove(); err != nil {
+	if err = s.Collection.Find(db.Cond{idKey: id}).Delete(); err != nil {
 		return err
 	}
 

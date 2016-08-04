@@ -7,20 +7,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jmoiron/sqlx"
+	"database/sql"
 	"github.com/stretchr/testify/assert"
 	"upper.io/bond"
-	"upper.io/db"
-	_ "upper.io/db/postgresql"
+	"upper.io/db.v2"
+	"upper.io/db.v2/postgresql"
 )
 
 var (
-	testHost string = `127.0.0.1`
+	DB           *database
+	connSettings postgresql.ConnectionURL
 )
 
-var (
-	DB *database
-)
+func pickDefault(env string, def string) string {
+	if v := os.Getenv(env); v != "" {
+		return v
+	}
+	return def
+}
 
 type database struct {
 	bond.Session
@@ -96,24 +100,22 @@ type UserStore struct {
 }
 
 func init() {
-	// os.Setenv("UPPERIO_DB_DEBUG", "1")
-	if os.Getenv("TEST_HOST") != "" {
-		testHost = os.Getenv("TEST_HOST")
+	connSettings = postgresql.ConnectionURL{
+		Host:     fmt.Sprintf("%s:%s", pickDefault("DB_HOST", "127.0.0.1"), pickDefault("DB_PORT", "5432")),
+		User:     pickDefault("BOND_USER", "bond_user"),
+		Database: pickDefault("BOND_DB", "bond_test"),
+		Password: pickDefault("BOND_PASSWORD", "bond_password"),
 	}
 
 	var err error
 	DB = &database{}
 
-	DB.Session, err = bond.Open(`postgresql`, db.Settings{
-		Host:     testHost,
-		User:     "bond_user",
-		Database: "bond_test",
-	})
-
+	sess, err := postgresql.Open(connSettings)
 	if err != nil {
 		panic(err)
 	}
 
+	DB.Session = bond.New(sess)
 	DB.Account = AccountStore{Store: DB.Store("accounts")}
 	DB.User = UserStore{Store: DB.Store("users")}
 	DB.Log = LogStore{Store: DB.Store("logs")}
@@ -133,10 +135,7 @@ func dbConnected() bool {
 func dbReset() {
 	cols, _ := DB.Collections()
 	for _, k := range cols {
-		col, err := DB.Collection(k)
-		if err == nil {
-			col.Truncate()
-		}
+		DB.Collection(k).Truncate()
 	}
 }
 
@@ -233,7 +232,7 @@ func TestDelete(t *testing.T) {
 	assert.True(t, acct.ID != 0)
 
 	// Delete by query -- without callbacks
-	err = DB.Account.Find(db.Cond{"name": acct.Name}).Remove()
+	err = DB.Account.Find(db.Cond{"name": acct.Name}).Delete()
 	assert.NoError(t, err)
 
 	err = DB.Account.Delete(&Account{Name: "X"})
@@ -241,11 +240,11 @@ func TestDelete(t *testing.T) {
 }
 
 func TestSlices(t *testing.T) {
-	id, err := DB.Account.Append(&Account{Name: "Apple"})
+	id, err := DB.Account.Insert(&Account{Name: "Apple"})
 	assert.NoError(t, err)
 	assert.True(t, id.(int64) > 0)
 
-	id, err = DB.Account.Append(Account{Name: "Google"})
+	id, err = DB.Account.Insert(Account{Name: "Google"})
 	assert.NoError(t, err)
 	assert.True(t, id.(int64) > 0)
 
@@ -266,74 +265,109 @@ func TestSelectOnlyIDs(t *testing.T) {
 }
 
 func TestTransaction(t *testing.T) {
-	tx, err := DB.NewTransaction()
-	assert.NoError(t, err)
+	var err error
 
-	// Should fail because user is a UNIQUE value and we already have a "peter".
-	err = DB.User.Tx(tx).Save(&User{Username: "peter"})
+	// This transaction should fail because user is a UNIQUE value and we already
+	// have a "peter".
+	err = DB.SessionTx(func(sess bond.Session) error {
+		return sess.Save(&User{Username: "peter"})
+	})
 	assert.Error(t, err)
 
-	// Ok, rolling back.
-	err = tx.Rollback()
+	// This transaction should fail because user is a UNIQUE value and we already
+	// have a "peter".
+	err = DB.SessionTx(func(sess bond.Session) error {
+		return DB.User.With(sess).Save(&User{Username: "peter"})
+	})
+	assert.Error(t, err)
+
+	// This transaction will have no errors, but we'll produce one in order for
+	// it to rollback at the last moment.
+	err = DB.SessionTx(func(sess bond.Session) error {
+		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
+			return err
+		}
+
+		if err := sess.Save(&User{Username: "Cool"}); err != nil {
+			return err
+		}
+
+		return fmt.Errorf("Rolling back for no reason.")
+	})
+	assert.Error(t, err)
+
+	// Attempt to add two new unique values, if the transaction above had not
+	// been rolled back this transaction will fail.
+	err = DB.SessionTx(func(sess bond.Session) error {
+		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
+			return err
+		}
+
+		if err := sess.Save(&User{Username: "Cool"}); err != nil {
+			return err
+		}
+
+		return nil
+	})
 	assert.NoError(t, err)
 
-	// Start again.
-	tx, err = DB.NewTransaction()
+	// If the transaction above was successful, this one will fail.
+	err = DB.SessionTx(func(sess bond.Session) error {
+		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
+			return err
+		}
 
-	// Attempt to add two new unique values.
-	err = DB.User.Tx(tx).Save(&User{Username: "Joe"})
-	assert.NoError(t, err)
+		if err := sess.Save(&User{Username: "Cool"}); err != nil {
+			return err
+		}
 
-	err = tx.Save(&User{Username: "Cool"})
-	assert.NoError(t, err)
-
-	// And a value that is going to be rolled back.
-	err = tx.Save(&Account{Name: "Rolled back"})
-	assert.NoError(t, err)
-
-	// Nope!
-	err = tx.Rollback()
-	assert.NoError(t, err)
-
-	// Start again.
-	tx, err = DB.NewTransaction()
-	assert.NoError(t, err)
-
-	// Attempt to add two unique values.
-	err = DB.User.Tx(tx).Save(&User{Username: "Joe"})
-	assert.NoError(t, err)
-
-	err = tx.Save(&User{Username: "Cool"})
-	assert.NoError(t, err)
-
-	// And a value that is going to be commited.
-	err = tx.Save(&Account{Name: "Commited!"})
-	assert.NoError(t, err)
-
-	// Yes, commit them.
-	err = tx.Commit()
-	assert.NoError(t, err)
+		return nil
+	})
+	assert.Error(t, err)
 }
 
-func TestTransactionWithNormalTx(t *testing.T) {
-	drv := DB.Driver()
+func TestInheritedTransaction(t *testing.T) {
+	anoterSess, err := bond.Open(postgresql.Adapter, connSettings)
+	assert.NoError(t, err)
+	defer anoterSess.Close()
 
-	tx, err := drv.(*sqlx.DB).DB.Begin()
+	// This is a normal SQL database.
+	drv := anoterSess.Driver()
+	sqlDB := drv.(*sql.DB)
+
+	// We create a transaction on this SQL database.
+	sqlTx, err := sqlDB.Begin()
+	assert.NoError(t, err)
+
+	// And pass that transaction to bond, this whole session is a transaction.
+	sess, err := bond.Bind(postgresql.Adapter, sqlTx)
 	assert.NoError(t, err)
 
 	// Should fail because user is a UNIQUE value and we already have a "peter".
-	err = DB.User.Tx(tx).Save(&User{Username: "peter"})
+	err = DB.User.With(sess).Save(&User{Username: "peter"})
 	assert.Error(t, err)
 
-	// Ok, rolling back.
-	err = tx.Rollback()
+	// The transaction is controlled outside bond.
+	err = sqlTx.Rollback()
 	assert.NoError(t, err)
 
-	// Start again.
-	tx, err = drv.(*sqlx.DB).DB.Begin()
-	userTx := DB.User.Tx(tx)
+	// The sqlTx is worthless now.
+	err = DB.User.With(sess).Save(&User{Username: "peter-2"})
+	assert.Error(t, err)
 
-	// Attempt to add two new unique values.
+	// But we can create a new one.
+	sqlTx, err = sqlDB.Begin()
+	assert.NoError(t, err)
+	assert.NotNil(t, sqlTx)
+
+	// And create another bond session.
+	sess, err = bond.Bind(postgresql.Adapter, sqlTx)
+	assert.NoError(t, err)
+
+	// This model uses the given session to do stuff.
+	userTx := DB.User.With(sess)
+
+	// Adding two new values.
 	err = userTx.Save(&User{Username: "Joe-2"})
 	assert.NoError(t, err)
 
@@ -341,18 +375,21 @@ func TestTransactionWithNormalTx(t *testing.T) {
 	assert.NoError(t, err)
 
 	// And a value that is going to be rolled back.
-	err = DB.Account.Tx(tx).Save(&Account{Name: "Rolled back"})
+	err = DB.Account.With(sess).Save(&Account{Name: "Rolled back"})
 	assert.NoError(t, err)
 
-	// Nope!
-	err = tx.Rollback()
+	// This session happens to be a transaction, let's rollback everything.
+	err = sqlTx.Rollback()
 	assert.NoError(t, err)
 
 	// Start again.
-	tx, err = drv.(*sqlx.DB).DB.Begin()
+	sqlTx, err = sqlDB.Begin()
 	assert.NoError(t, err)
 
-	userTx = DB.User.Tx(tx)
+	sess, err = bond.Bind(postgresql.Adapter, sqlTx)
+	assert.NoError(t, err)
+
+	userTx = DB.User.With(sess)
 
 	// Attempt to add two unique values.
 	err = userTx.Save(&User{Username: "Joe-2"})
@@ -362,13 +399,10 @@ func TestTransactionWithNormalTx(t *testing.T) {
 	assert.NoError(t, err)
 
 	// And a value that is going to be commited.
-	err = DB.Account.Tx(tx).Save(&Account{Name: "Commited!"})
+	err = DB.Account.With(sess).Save(&Account{Name: "Commited!"})
 	assert.NoError(t, err)
 
 	// Yes, commit them.
-	err = tx.Commit()
+	err = sqlTx.Commit()
 	assert.NoError(t, err)
 }
-
-// TODO:
-// make a test with a join example...

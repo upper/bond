@@ -1,93 +1,99 @@
 package bond
 
 import (
+	"database/sql"
+	"fmt"
 	"reflect"
 	"sync"
 
-	"upper.io/db"
+	"upper.io/db.v2"
+	"upper.io/db.v2/lib/sqlbuilder"
 )
 
+// SQLBackend represents both *sql.Tx and *sql.DB.
+type SQLBackend interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+	Prepare(query string) (*sql.Stmt, error)
+	Query(query string, args ...interface{}) (*sql.Rows, error)
+	QueryRow(query string, args ...interface{}) *sql.Row
+}
+
 type Session interface {
-	db.Tx
+	sqlbuilder.Backend
+
 	Store(interface{}) Store
 	Find(...interface{}) db.Result
 	Save(Model) error
 	Delete(Model) error
-	NewTransaction() (Session, error)
-	ContinueTransaction() (Session, error, bool)
+
+	SessionTx(func(tx Session) error) error
 }
 
 type session struct {
-	db.Database
+	sqlbuilder.Backend
+
 	stores     map[string]*store
 	storesLock sync.Mutex
 }
 
 // Open connects to a database.
 func Open(adapter string, url db.ConnectionURL) (Session, error) {
-	conn, err := db.Open(adapter, url)
+	conn, err := sqlbuilder.Open(adapter, url)
 	if err != nil {
 		return nil, err
 	}
-
-	return &session{Database: conn, stores: make(map[string]*store)}, nil
+	return New(conn), nil
 }
 
-// NewTransaction creates and returns a session that runs within a transaction
-// block. It will fail if called inside another transaction
-func (s *session) NewTransaction() (Session, error) {
-	tx, err := s.Database.Transaction()
-	if err != nil {
-		return nil, err
-	}
-
-	sess := &session{
-		Database: tx,
-		stores:   make(map[string]*store),
-	}
-
-	return sess, nil
+// New returns a new session.
+func New(conn sqlbuilder.Backend) Session {
+	return &session{Backend: conn, stores: make(map[string]*store)}
 }
 
-// ContinueTransaction creates and returns a session that runs within a
-// transaction block. If called within another transaction block it will reuse
-// the transaction in progress, if not it will start a new transaction.
-// The 3rd returned value indicates if a session was continued (true) or not
-func (s *session) ContinueTransaction() (Session, error, bool) {
-	// check if called within a transaction
-	tx, inTransaction := s.Database.(db.Tx)
+// Bind binds to an existent database session. Possible backend values are:
+// *sql.Tx or *sql.DB.
+func Bind(adapter string, backend SQLBackend) (Session, error) {
+	var conn sqlbuilder.Backend
 
-	// if not start a new one
-	if !inTransaction {
+	switch t := backend.(type) {
+	case *sql.Tx:
 		var err error
-		tx, err = s.Database.Transaction()
+		conn, err = sqlbuilder.NewTx(adapter, t)
 		if err != nil {
-			return nil, err, false
+			return nil, err
 		}
+	case *sql.DB:
+		var err error
+		conn, err = sqlbuilder.New(adapter, t)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("Unknown backend type: %T", t)
 	}
-
-	sess := &session{
-		Database: tx,
-		stores:   make(map[string]*store),
-	}
-
-	return sess, nil, inTransaction
+	return &session{Backend: conn, stores: make(map[string]*store)}, nil
 }
 
-// Commit commits the current transaction.
-func (s *session) Commit() error {
-	if tx, ok := s.Database.(db.Tx); ok {
-		return tx.Commit()
+func (s *session) SessionTx(fn func(sess Session) error) error {
+	txFn := func(sess sqlbuilder.Tx) error {
+		return fn(&session{
+			Backend: sess,
+			stores:  make(map[string]*store),
+		})
 	}
-	return ErrMissingTransaction
-}
 
-// Rollback discards the current transaction.
-func (s *session) Rollback() error {
-	if tx, ok := s.Database.(db.Tx); ok {
-		return tx.Rollback()
+	switch t := s.Backend.(type) {
+	case sqlbuilder.Database:
+		return t.Tx(txFn)
+	case sqlbuilder.Tx:
+		defer t.Close()
+		err := txFn(t)
+		if err != nil {
+			return t.Rollback()
+		}
+		return t.Commit()
 	}
-	return ErrMissingTransaction
+	panic("reached")
 }
 
 func (s *session) Store(item interface{}) Store {
@@ -144,7 +150,7 @@ func (s *session) getStore(item interface{}) *store {
 		return store
 	}
 
-	store := &store{Collection: s.Database.C(colName), session: s}
+	store := &store{Collection: s.Collection(colName), session: s}
 	s.stores[colName] = store
 	return store
 }

@@ -1,16 +1,17 @@
 package bond
 
-import "upper.io/db"
+import "upper.io/db.v2"
 
 type result struct {
 	session    Session
 	collection db.Collection
 	query      db.Result
+	lastErr    error
 
 	args struct {
 		where  *[]interface{}
-		limit  *uint
-		skip   *uint
+		limit  *int
+		skip   *int
 		sort   *[]interface{}
 		fields *[]interface{}
 		group  *[]interface{}
@@ -21,17 +22,25 @@ type result struct {
 // method that would return the raw query that is sent to the driver.
 // Useful for debugging..
 
-func (r *result) Limit(n uint) db.Result {
+func (r *result) String() string {
+	return r.query.String()
+}
+
+func (r *result) Err() error {
+	return r.lastErr
+}
+
+func (r *result) Limit(n int) db.Result {
 	r.args.limit = &n
 	return r
 }
 
-func (r *result) Skip(n uint) db.Result {
+func (r *result) Offset(n int) db.Result {
 	r.args.skip = &n
 	return r
 }
 
-func (r *result) Sort(fields ...interface{}) db.Result {
+func (r *result) OrderBy(fields ...interface{}) db.Result {
 	r.args.sort = &fields
 	return r
 }
@@ -81,7 +90,7 @@ func (r *result) All(dst interface{}) error {
 	return res.All(dst)
 }
 
-func (r *result) Next(dst interface{}) error {
+func (r *result) Next(dst interface{}) bool {
 	if r.collection == nil {
 		r.collection = r.getCollection(dst)
 	}
@@ -90,12 +99,18 @@ func (r *result) Next(dst interface{}) error {
 	if r.query == nil {
 		res, err := r.buildQuery(col)
 		if err != nil {
-			return err
+			r.lastErr = err
+			return false
 		}
 		r.query = res
 	}
 
-	return r.query.Next(dst)
+	if !r.query.Next(dst) {
+		r.lastErr = r.query.Err()
+		return false
+	}
+
+	return true
 }
 
 func (r *result) Update(values interface{}) error {
@@ -112,7 +127,7 @@ func (r *result) Update(values interface{}) error {
 	return res.Update(values)
 }
 
-func (r *result) Remove() error {
+func (r *result) Delete() error {
 	if r.collection == nil {
 		return ErrUnknownCollection
 	}
@@ -123,7 +138,7 @@ func (r *result) Remove() error {
 	}
 	r.query = res
 
-	return res.Remove()
+	return res.Delete()
 }
 
 func (r *result) Count() (uint64, error) {
@@ -167,10 +182,10 @@ func (r *result) buildQuery(col db.Collection) (db.Result, error) {
 		res = res.Limit(*r.args.limit)
 	}
 	if r.args.skip != nil {
-		res = res.Skip(*r.args.skip)
+		res = res.Offset(*r.args.skip)
 	}
 	if r.args.sort != nil {
-		res = res.Sort((*r.args.sort)...)
+		res = res.OrderBy((*r.args.sort)...)
 	}
 	if r.args.fields != nil {
 		res = res.Select((*r.args.fields)...)
