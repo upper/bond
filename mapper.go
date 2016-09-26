@@ -69,6 +69,9 @@ func (m *mapper) getStructInfo(item interface{}) (*structInfo, reflect.Value, er
 }
 
 func (m *mapper) getPrimaryField(item interface{}) (reflect.Value, *structInfo, error) {
+	if item == nil {
+		return reflect.Value{}, nil, errors.New("Expecting a non nil value")
+	}
 	sinfo, itemv, err := m.getStructInfo(item)
 	if err != nil {
 		return reflect.Value{}, sinfo, err
