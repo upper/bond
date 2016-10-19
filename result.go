@@ -55,6 +55,14 @@ func (r *result) Where(terms ...interface{}) db.Result {
 	return r
 }
 
+func (r *result) And(terms ...interface{}) db.Result {
+	if r.args.where == nil {
+		return r.Where(terms...)
+	}
+	*r.args.where = append(*r.args.where, terms...)
+	return r
+}
+
 func (r *result) Group(fields ...interface{}) db.Result {
 	r.args.group = &fields
 	return r
