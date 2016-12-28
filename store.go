@@ -1,7 +1,6 @@
 package bond
 
 import (
-	"log"
 	"reflect"
 	"upper.io/db.v3"
 	"upper.io/db.v3/lib/reflectx"
@@ -46,8 +45,6 @@ func (s *store) getPrimaryKeyFields(item interface{}) ([]string, []interface{}) 
 // WithSession returns a copy of the store that runs in the context of the given
 // transaction.
 func (s *store) WithSession(sess Session) Store {
-	log.Printf("With session: %v (%p)", sess, sess.Context())
-	log.Printf("Current session: %v (%p)", s.session, s.session.Context())
 	return &store{
 		Collection: sess.Collection(s.Collection.Name()),
 		session:    sess,
