@@ -1,6 +1,7 @@
 package bond_test
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -10,8 +11,8 @@ import (
 	"database/sql"
 	"github.com/stretchr/testify/assert"
 	"upper.io/bond"
-	"upper.io/db.v2"
-	"upper.io/db.v2/postgresql"
+	"upper.io/db.v3"
+	"upper.io/db.v3/postgresql"
 )
 
 var (
@@ -176,9 +177,9 @@ func TestAccount(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, acct.Name, acctChk.Name)
 
-	err = DB.Find(db.Cond{"id": acct.ID}).One(acctChk)
-	assert.NoError(t, err)
-	assert.Equal(t, acct.Name, acctChk.Name)
+	//err = DB.Find(db.Cond{"id": acct.ID}).One(acctChk)
+	//assert.NoError(t, err)
+	//assert.Equal(t, acct.Name, acctChk.Name)
 
 	err = DB.Store("accounts").Find(db.Cond{"id": acct.ID}).One(acctChk)
 	assert.NoError(t, err)
@@ -269,22 +270,22 @@ func TestTransaction(t *testing.T) {
 
 	// This transaction should fail because user is a UNIQUE value and we already
 	// have a "peter".
-	err = DB.SessionTx(func(sess bond.Session) error {
+	err = DB.SessionTx(nil, func(sess bond.Session) error {
 		return sess.Save(&User{Username: "peter"})
 	})
 	assert.Error(t, err)
 
 	// This transaction should fail because user is a UNIQUE value and we already
 	// have a "peter".
-	err = DB.SessionTx(func(sess bond.Session) error {
-		return DB.User.With(sess).Save(&User{Username: "peter"})
+	err = DB.SessionTx(nil, func(sess bond.Session) error {
+		return DB.User.WithSession(sess).Save(&User{Username: "peter"})
 	})
 	assert.Error(t, err)
 
 	// This transaction will have no errors, but we'll produce one in order for
 	// it to rollback at the last moment.
-	err = DB.SessionTx(func(sess bond.Session) error {
-		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
+	err = DB.SessionTx(nil, func(sess bond.Session) error {
+		if err := DB.User.WithSession(sess).Save(&User{Username: "Joe"}); err != nil {
 			return err
 		}
 
@@ -298,8 +299,8 @@ func TestTransaction(t *testing.T) {
 
 	// Attempt to add two new unique values, if the transaction above had not
 	// been rolled back this transaction will fail.
-	err = DB.SessionTx(func(sess bond.Session) error {
-		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
+	err = DB.SessionTx(nil, func(sess bond.Session) error {
+		if err := DB.User.WithSession(sess).Save(&User{Username: "Joe"}); err != nil {
 			return err
 		}
 
@@ -312,8 +313,8 @@ func TestTransaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// If the transaction above was successful, this one will fail.
-	err = DB.SessionTx(func(sess bond.Session) error {
-		if err := DB.User.With(sess).Save(&User{Username: "Joe"}); err != nil {
+	err = DB.SessionTx(nil, func(sess bond.Session) error {
+		if err := DB.User.WithSession(sess).Save(&User{Username: "Joe"}); err != nil {
 			return err
 		}
 
@@ -344,7 +345,7 @@ func TestInheritedTransaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Should fail because user is a UNIQUE value and we already have a "peter".
-	err = DB.User.With(sess).Save(&User{Username: "peter"})
+	err = DB.User.WithSession(sess).Save(&User{Username: "peter"})
 	assert.Error(t, err)
 
 	// The transaction is controlled outside bond.
@@ -352,7 +353,7 @@ func TestInheritedTransaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// The sqlTx is worthless now.
-	err = DB.User.With(sess).Save(&User{Username: "peter-2"})
+	err = DB.User.WithSession(sess).Save(&User{Username: "peter-2"})
 	assert.Error(t, err)
 
 	// But we can create a new one.
@@ -365,7 +366,7 @@ func TestInheritedTransaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// This model uses the given session to do stuff.
-	userTx := DB.User.With(sess)
+	userTx := DB.User.WithSession(sess)
 
 	// Adding two new values.
 	err = userTx.Save(&User{Username: "Joe-2"})
@@ -375,7 +376,7 @@ func TestInheritedTransaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// And a value that is going to be rolled back.
-	err = DB.Account.With(sess).Save(&Account{Name: "Rolled back"})
+	err = DB.Account.WithSession(sess).Save(&Account{Name: "Rolled back"})
 	assert.NoError(t, err)
 
 	// This session happens to be a transaction, let's rollback everything.
@@ -389,7 +390,7 @@ func TestInheritedTransaction(t *testing.T) {
 	sess, err = bond.Bind(postgresql.Adapter, sqlTx)
 	assert.NoError(t, err)
 
-	userTx = DB.User.With(sess)
+	userTx = DB.User.WithSession(sess)
 
 	// Attempt to add two unique values.
 	err = userTx.Save(&User{Username: "Joe-2"})
@@ -399,10 +400,57 @@ func TestInheritedTransaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// And a value that is going to be commited.
-	err = DB.Account.With(sess).Save(&Account{Name: "Commited!"})
+	err = DB.Account.WithSession(sess).Save(&Account{Name: "Commited!"})
 	assert.NoError(t, err)
 
 	// Yes, commit them.
 	err = sqlTx.Commit()
 	assert.NoError(t, err)
+}
+
+func TestUnknownStore(t *testing.T) {
+	var err error
+
+	err = DB.Save(nil)
+	assert.Error(t, err)
+
+	err = DB.Store(11).Save(&User{Username: "Foo"})
+	assert.Error(t, err)
+}
+
+func TestContext(t *testing.T) {
+	{
+		ctx := context.Background()
+		err := DB.SessionTx(ctx, func(sess bond.Session) error {
+			if err := sess.Save(&User{Username: "Cool 2"}); err != nil {
+				return err
+			}
+			return nil
+		})
+		assert.NoError(t, err)
+	}
+
+	{
+		ctx, cancelFn := context.WithCancel(context.Background())
+		err := DB.SessionTx(ctx, func(sess bond.Session) error {
+			if err := sess.Save(&User{Username: "Cool 3"}); err != nil {
+				return err
+			}
+			return nil
+		})
+		assert.NoError(t, err)
+		cancelFn()
+	}
+
+	{
+		ctx, cancelFn := context.WithCancel(context.Background())
+		cancelFn()
+		err := DB.SessionTx(ctx, func(sess bond.Session) error {
+			if err := sess.Save(&User{Username: "Cool 4"}); err != nil {
+				return err
+			}
+			return nil
+		})
+		assert.Error(t, err)
+	}
 }

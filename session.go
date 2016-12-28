@@ -1,36 +1,63 @@
 package bond
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
 
-	"upper.io/db.v2"
-	"upper.io/db.v2/lib/sqlbuilder"
+	"upper.io/db.v3"
+	"upper.io/db.v3/lib/sqlbuilder"
 )
 
-// SQLBackend represents both *sql.Tx and *sql.DB.
+type txWithContext interface {
+	WithContext(context.Context) sqlbuilder.Tx
+}
+
+type databaseWithContext interface {
+	WithContext(context.Context) sqlbuilder.Database
+}
+
+type hasContext interface {
+	Context() context.Context
+}
+
+// SQLBackend represents a type that can execute SQL queries.
 type SQLBackend interface {
-	Exec(query string, args ...interface{}) (sql.Result, error)
-	Prepare(query string) (*sql.Stmt, error)
-	Query(query string, args ...interface{}) (*sql.Rows, error)
-	QueryRow(query string, args ...interface{}) *sql.Row
+	Exec(string, ...interface{}) (sql.Result, error)
+	Prepare(string) (*sql.Stmt, error)
+	Query(string, ...interface{}) (*sql.Rows, error)
+	QueryRow(string, ...interface{}) *sql.Row
+
+	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+	PrepareContext(context.Context, string) (*sql.Stmt, error)
+	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
+}
+
+type Backend interface {
+	sqlbuilder.SQLBuilder
+	db.Database
 }
 
 type Session interface {
-	sqlbuilder.Backend
+	Backend
 
 	Store(interface{}) Store
-	Find(...interface{}) db.Result
+
 	Save(Model) error
 	Delete(Model) error
 
-	SessionTx(func(tx Session) error) error
+	WithContext(context.Context) Session
+	Context() context.Context
+
+	SessionTx(context.Context, func(tx Session) error) error
 }
 
 type session struct {
-	sqlbuilder.Backend
+	Backend
 
 	stores     map[string]*store
 	storesLock sync.Mutex
@@ -46,14 +73,35 @@ func Open(adapter string, url db.ConnectionURL) (Session, error) {
 }
 
 // New returns a new session.
-func New(conn sqlbuilder.Backend) Session {
+func New(conn Backend) Session {
 	return &session{Backend: conn, stores: make(map[string]*store)}
+}
+
+func (s *session) WithContext(ctx context.Context) Session {
+	var backendCtx Backend
+	switch t := s.Backend.(type) {
+	case databaseWithContext:
+		backendCtx = t.WithContext(ctx)
+	case txWithContext:
+		backendCtx = t.WithContext(ctx)
+	default:
+		panic("Bad session")
+	}
+
+	return &session{
+		Backend: backendCtx,
+		stores:  make(map[string]*store),
+	}
+}
+
+func (s *session) Context() context.Context {
+	return s.Backend.(hasContext).Context()
 }
 
 // Bind binds to an existent database session. Possible backend values are:
 // *sql.Tx or *sql.DB.
 func Bind(adapter string, backend SQLBackend) (Session, error) {
-	var conn sqlbuilder.Backend
+	var conn Backend
 
 	switch t := backend.(type) {
 	case *sql.Tx:
@@ -71,10 +119,11 @@ func Bind(adapter string, backend SQLBackend) (Session, error) {
 	default:
 		return nil, fmt.Errorf("Unknown backend type: %T", t)
 	}
+
 	return &session{Backend: conn, stores: make(map[string]*store)}, nil
 }
 
-func (s *session) SessionTx(fn func(sess Session) error) error {
+func (s *session) SessionTx(ctx context.Context, fn func(sess Session) error) error {
 	txFn := func(sess sqlbuilder.Tx) error {
 		return fn(&session{
 			Backend: sess,
@@ -84,7 +133,7 @@ func (s *session) SessionTx(fn func(sess Session) error) error {
 
 	switch t := s.Backend.(type) {
 	case sqlbuilder.Database:
-		return t.Tx(txFn)
+		return t.Tx(ctx, txFn)
 	case sqlbuilder.Tx:
 		defer t.Close()
 		err := txFn(t)
@@ -93,42 +142,33 @@ func (s *session) SessionTx(fn func(sess Session) error) error {
 		}
 		return t.Commit()
 	}
-	panic("reached")
-}
 
-func (s *session) Store(item interface{}) Store {
-	store := s.getStore(item)
-	return store
-}
-
-func (s *session) Find(terms ...interface{}) db.Result {
-	result := &result{session: s}
-	if len(terms) > 0 {
-		result.args.where = &terms
-	}
-	return result
+	return errors.New("Missing backend, forgot to use bond.New?")
 }
 
 func (s *session) Save(item Model) error {
-	store := s.getStore(item)
-	return store.Save(item)
+	if item == nil {
+		return ErrExpectingNonNilModel
+	}
+	return s.Store(item.CollectionName()).Save(item)
 }
 
 func (s *session) Delete(item Model) error {
-	store := s.getStore(item)
-	return store.Delete(item)
+	if item == nil {
+		return ErrExpectingNonNilModel
+	}
+	return s.Store(item.CollectionName()).Delete(item)
 }
 
-func (s *session) getStore(item interface{}) *store {
+func (s *session) Store(item interface{}) Store {
 	var colName string
 
-	if str, ok := item.(string); ok {
-		colName = str
-	} else if m, ok := item.(Model); ok {
-		colName = m.CollectionName()
-	}
-
-	if colName == "" {
+	switch t := item.(type) {
+	case string:
+		colName = t
+	case Model:
+		colName = t.CollectionName()
+	default:
 		itemv := reflect.ValueOf(item)
 		if itemv.Kind() == reflect.Ptr {
 			itemv = reflect.Indirect(itemv)
@@ -140,7 +180,7 @@ func (s *session) getStore(item interface{}) *store {
 	}
 
 	if colName == "" {
-		panic(ErrUnknownCollection)
+		return &store{session: s}
 	}
 
 	s.storesLock.Lock()
@@ -150,7 +190,10 @@ func (s *session) getStore(item interface{}) *store {
 		return store
 	}
 
-	store := &store{Collection: s.Collection(colName), session: s}
+	store := &store{
+		Collection: s.Collection(colName),
+		session:    s,
+	}
 	s.stores[colName] = store
 	return store
 }

@@ -1,18 +1,28 @@
 package bond
 
 import (
+	"log"
 	"reflect"
-
-	"upper.io/db.v2"
+	"upper.io/db.v3"
+	"upper.io/db.v3/lib/reflectx"
 )
+
+var mapper = reflectx.NewMapper("db")
+
+type hasPrimaryKeys interface {
+	PrimaryKeys() []string
+}
 
 type Store interface {
 	db.Collection
 
 	Session() Session
+	WithSession(sess Session) Store
+
 	Save(interface{}) error
 	Delete(interface{}) error
-	With(sess Session) Store
+	Create(interface{}) error
+	Update(interface{}) error
 }
 
 type store struct {
@@ -21,64 +31,80 @@ type store struct {
 	session Session
 }
 
-// With returns a copy of the store that runs in the context of the given
+func (s *store) getPrimaryKeyFields(item interface{}) ([]string, []interface{}) {
+	pKeys := s.Collection.(hasPrimaryKeys).PrimaryKeys()
+	fields := mapper.FieldsByName(reflect.ValueOf(item), pKeys)
+
+	values := make([]interface{}, 0, len(fields))
+	for i := range fields {
+		values = append(values, fields[i].Interface())
+	}
+
+	return pKeys, values
+}
+
+// WithSession returns a copy of the store that runs in the context of the given
 // transaction.
-func (s *store) With(sess Session) Store {
+func (s *store) WithSession(sess Session) Store {
+	log.Printf("With session: %v (%p)", sess, sess.Context())
+	log.Printf("Current session: %v (%p)", s.session, s.session.Context())
 	return &store{
-		Collection: sess.(*session).Collection(s.Collection.Name()),
+		Collection: sess.Collection(s.Collection.Name()),
 		session:    sess,
 	}
 }
 
-func (s *store) Find(terms ...interface{}) db.Result {
-	result := &result{session: s.session, collection: s.Collection}
-	result.args.where = &terms
-	return result
-}
-
 func (s *store) Save(item interface{}) error {
-	pkField, structInfo, err := structMapper.getPrimaryField(item)
-	if err != nil {
-		return err
+	if s.Collection == nil {
+		return ErrInvalidCollection
+	}
+
+	if reflect.TypeOf(item).Kind() != reflect.Ptr {
+		return ErrExpectingPointerToStruct
 	}
 
 	if m, ok := item.(HasValidate); ok {
-		if err = m.Validate(); err != nil {
+		if err := m.Validate(); err != nil {
 			return err
 		}
 	}
 
-	id := pkField.Interface()
-
-	if id == structInfo.pkFieldInfo.Zero.Interface() {
-		return s.Create(item)
-	} else {
-		return s.Update(item)
+	_, fields := s.getPrimaryKeyFields(item)
+	isCreate := true
+	for i := range fields {
+		if fields[i] != reflect.Zero(reflect.TypeOf(fields[i])).Interface() {
+			isCreate = false
+		}
 	}
 
-	return nil
+	if isCreate {
+		return s.Create(item)
+	}
+
+	return s.Update(item)
 }
 
 func (s *store) Create(item interface{}) error {
-	pkField, _, err := structMapper.getPrimaryField(item)
-	if err != nil {
-		return err
+	if s.Collection == nil {
+		return ErrInvalidCollection
+	}
+
+	if reflect.TypeOf(item).Kind() != reflect.Ptr {
+		return ErrExpectingPointerToStruct
 	}
 
 	if m, ok := item.(HasBeforeCreate); ok {
-		if err = m.BeforeCreate(s.session); err != nil {
+		if err := m.BeforeCreate(s.session); err != nil {
 			return err
 		}
 	}
 
-	id, err := s.Collection.Insert(item)
-	if err != nil {
+	if err := s.Collection.InsertReturning(item); err != nil {
 		return err
 	}
-	pkField.Set(reflect.ValueOf(id))
 
 	if m, ok := item.(HasAfterCreate); ok {
-		if err = m.AfterCreate(s.session); err != nil {
+		if err := m.AfterCreate(s.session); err != nil {
 			return err
 		}
 	}
@@ -86,58 +112,72 @@ func (s *store) Create(item interface{}) error {
 }
 
 func (s *store) Update(item interface{}) error {
-	pkField, structInfo, err := structMapper.getPrimaryField(item)
-	if err != nil {
-		return err
+	if s.Collection == nil {
+		return ErrInvalidCollection
 	}
-	id := pkField.Interface()
+
+	if reflect.TypeOf(item).Kind() != reflect.Ptr {
+		return ErrExpectingPointerToStruct
+	}
 
 	if m, ok := item.(HasBeforeUpdate); ok {
-		if err = m.BeforeUpdate(s.session); err != nil {
+		if err := m.BeforeUpdate(s.session); err != nil {
 			return err
 		}
 	}
 
-	idKey := structInfo.pkFieldInfo.Name
+	cond := db.And()
+	pKeys, fields := s.getPrimaryKeyFields(item)
+	for i := range pKeys {
+		cond = cond.And(db.Cond{pKeys[i]: fields[i]})
+	}
+	if cond.Empty() {
+		return ErrZeroItemID
+	}
 
-	if err = s.Collection.Find(db.Cond{idKey: id}).Update(item); err != nil {
+	if err := s.Collection.Find(cond).Update(item); err != nil {
 		return err
 	}
 
 	if m, ok := item.(HasAfterUpdate); ok {
-		if err = m.AfterUpdate(s.session); err != nil {
+		if err := m.AfterUpdate(s.session); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
 func (s *store) Delete(item interface{}) error {
-	pkField, structInfo, err := structMapper.getPrimaryField(item)
-	if err != nil {
-		return err
+	if s.Collection == nil {
+		return ErrInvalidCollection
 	}
 
-	id := pkField.Interface()
-	idKey := structInfo.pkFieldInfo.Name
+	if reflect.TypeOf(item).Kind() != reflect.Ptr {
+		return ErrExpectingPointerToStruct
+	}
 
-	// Inform when we're deleting an item with no ID value
-	if id == structInfo.pkFieldInfo.Zero.Interface() {
+	cond := db.And()
+	pKeys, fields := s.getPrimaryKeyFields(item)
+	for i := range pKeys {
+		cond = cond.And(db.Cond{pKeys[i]: fields[i]})
+	}
+	if cond.Empty() {
 		return ErrZeroItemID
 	}
 
 	if m, ok := item.(HasBeforeDelete); ok {
-		if err = m.BeforeDelete(s.session); err != nil {
+		if err := m.BeforeDelete(s.session); err != nil {
 			return err
 		}
 	}
 
-	if err = s.Collection.Find(db.Cond{idKey: id}).Delete(); err != nil {
+	if err := s.Collection.Find(cond).Delete(); err != nil {
 		return err
 	}
 
 	if m, ok := item.(HasAfterDelete); ok {
-		if err = m.AfterDelete(s.session); err != nil {
+		if err := m.AfterDelete(s.session); err != nil {
 			return err
 		}
 	}
