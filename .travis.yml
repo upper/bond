@@ -1,11 +1,12 @@
 sudo: false
 
-email: false
+notifications:
+  email: false
 
 language: go
 
 go:
-  - "1.7.1"
+  - "1.8beta2"
 
 addons:
   postgresql: "9.4"
