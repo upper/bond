@@ -1,7 +1,6 @@
 package bond_test
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -416,41 +415,4 @@ func TestUnknownStore(t *testing.T) {
 
 	err = DB.Store(11).Save(&User{Username: "Foo"})
 	assert.Error(t, err)
-}
-
-func TestContext(t *testing.T) {
-	{
-		ctx := context.Background()
-		err := DB.SessionTx(ctx, func(sess bond.Session) error {
-			if err := sess.Save(&User{Username: "Cool 2"}); err != nil {
-				return err
-			}
-			return nil
-		})
-		assert.NoError(t, err)
-	}
-
-	{
-		ctx, cancelFn := context.WithCancel(context.Background())
-		err := DB.SessionTx(ctx, func(sess bond.Session) error {
-			if err := sess.Save(&User{Username: "Cool 3"}); err != nil {
-				return err
-			}
-			return nil
-		})
-		assert.NoError(t, err)
-		cancelFn()
-	}
-
-	{
-		ctx, cancelFn := context.WithCancel(context.Background())
-		cancelFn()
-		err := DB.SessionTx(ctx, func(sess bond.Session) error {
-			if err := sess.Save(&User{Username: "Cool 4"}); err != nil {
-				return err
-			}
-			return nil
-		})
-		assert.Error(t, err)
-	}
 }
