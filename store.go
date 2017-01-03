@@ -86,18 +86,20 @@ func (s *store) Create(item interface{}) error {
 		return ErrInvalidCollection
 	}
 
-	if reflect.TypeOf(item).Kind() != reflect.Ptr {
-		return ErrExpectingPointerToStruct
-	}
-
 	if m, ok := item.(HasBeforeCreate); ok {
 		if err := m.BeforeCreate(s.session); err != nil {
 			return err
 		}
 	}
 
-	if err := s.Collection.InsertReturning(item); err != nil {
-		return err
+	if reflect.TypeOf(item).Kind() == reflect.Ptr {
+		if err := s.Collection.InsertReturning(item); err != nil {
+			return err
+		}
+	} else {
+		if _, err := s.Collection.Insert(item); err != nil {
+			return err
+		}
 	}
 
 	if m, ok := item.(HasAfterCreate); ok {
@@ -111,10 +113,6 @@ func (s *store) Create(item interface{}) error {
 func (s *store) Update(item interface{}) error {
 	if s.Collection == nil {
 		return ErrInvalidCollection
-	}
-
-	if reflect.TypeOf(item).Kind() != reflect.Ptr {
-		return ErrExpectingPointerToStruct
 	}
 
 	if m, ok := item.(HasBeforeUpdate); ok {
@@ -134,6 +132,12 @@ func (s *store) Update(item interface{}) error {
 
 	if err := s.Collection.Find(cond).Update(item); err != nil {
 		return err
+	}
+
+	if reflect.TypeOf(item).Kind() == reflect.Ptr {
+		if err := s.Collection.Find(cond).One(item); err != nil {
+			return err
+		}
 	}
 
 	if m, ok := item.(HasAfterUpdate); ok {
