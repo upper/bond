@@ -36,7 +36,9 @@ func (s *store) getPrimaryKeyFields(item interface{}) ([]string, []interface{}) 
 
 	values := make([]interface{}, 0, len(fields))
 	for i := range fields {
-		values = append(values, fields[i].Interface())
+		if fields[i].IsValid() {
+			values = append(values, fields[i].Interface())
+		}
 	}
 
 	return pKeys, values
@@ -54,10 +56,6 @@ func (s *store) WithSession(sess Session) Store {
 func (s *store) Save(item interface{}) error {
 	if s.Collection == nil {
 		return ErrInvalidCollection
-	}
-
-	if reflect.TypeOf(item).Kind() != reflect.Ptr {
-		return ErrExpectingPointerToStruct
 	}
 
 	if m, ok := item.(HasValidate); ok {
