@@ -58,10 +58,6 @@ func (s *store) Save(item interface{}) error {
 		return ErrInvalidCollection
 	}
 
-	if reflect.TypeOf(item).Kind() != reflect.Ptr {
-		return ErrExpectingPointerToStruct
-	}
-
 	if m, ok := item.(HasValidate); ok {
 		if err := m.Validate(); err != nil {
 			return err
