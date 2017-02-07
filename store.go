@@ -36,7 +36,9 @@ func (s *store) getPrimaryKeyFields(item interface{}) ([]string, []interface{}) 
 
 	values := make([]interface{}, 0, len(fields))
 	for i := range fields {
-		values = append(values, fields[i].Interface())
+		if fields[i].IsValid() {
+			values = append(values, fields[i].Interface())
+		}
 	}
 
 	return pKeys, values
@@ -130,12 +132,12 @@ func (s *store) Update(item interface{}) error {
 		return ErrZeroItemID
 	}
 
-	if err := s.Collection.Find(cond).Update(item); err != nil {
-		return err
-	}
-
 	if reflect.TypeOf(item).Kind() == reflect.Ptr {
-		if err := s.Collection.Find(cond).One(item); err != nil {
+		if err := s.Collection.UpdateReturning(item); err != nil {
+			return err
+		}
+	} else {
+		if err := s.Collection.Find(cond).Update(item); err != nil {
 			return err
 		}
 	}
