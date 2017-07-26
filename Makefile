@@ -3,8 +3,8 @@ DB_PORT      ?= 5432
 DB_USER      ?= postgres
 DB_PASSWORD  ?=
 
-BOND_USER       ?= bond_user
 BOND_DB         ?= bond_test
+BOND_USER       ?= bond_user
 BOND_PASSWORD   ?= bond_password
 
 all: test
