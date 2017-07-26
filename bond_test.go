@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"database/sql"
+
 	"github.com/stretchr/testify/assert"
 	"upper.io/bond"
 	"upper.io/db.v3"
@@ -102,8 +103,8 @@ type UserStore struct {
 func init() {
 	connSettings = postgresql.ConnectionURL{
 		Host:     fmt.Sprintf("%s:%s", pickDefault("DB_HOST", "127.0.0.1"), pickDefault("DB_PORT", "5432")),
-		User:     pickDefault("BOND_USER", "bond_user"),
 		Database: pickDefault("BOND_DB", "bond_test"),
+		User:     pickDefault("BOND_USER", "bond_user"),
 		Password: pickDefault("BOND_PASSWORD", "bond_password"),
 	}
 
