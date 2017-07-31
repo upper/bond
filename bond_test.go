@@ -47,8 +47,8 @@ type Account struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
-func (a *Account) CollectionName() string {
-	return DB.Account.Name()
+func (a *Account) Store(sess bond.Session) bond.Store {
+	return sess.Store("accounts")
 }
 
 func (a Account) AfterCreate(sess bond.Session) error {
@@ -74,12 +74,12 @@ func (u User) AfterCreate(sess bond.Session) error {
 	return sess.Save(&Log{Message: message})
 }
 
-func (u *User) CollectionName() string {
-	return `users`
+func (u *User) Store(sess bond.Session) bond.Store {
+	return sess.Store("users")
 }
 
-func (l *Log) CollectionName() string {
-	return `logs`
+func (l *Log) Store(sess bond.Session) bond.Store {
+	return sess.Store("logs")
 }
 
 type LogStore struct {

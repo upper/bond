@@ -7,13 +7,15 @@ BOND_DB         ?= bond_test
 BOND_USER       ?= bond_user
 BOND_PASSWORD   ?= bond_password
 
+TEST_FLAGS ?=
+
 all: test
 
 build:
 	@go build
 
 test: resetdb
-	UPPERIO_DB_DEBUG=1 go test -v ./...
+	UPPERIO_DB_DEBUG=1 go test -v ./... $(TEST_FLAGS)
 
 resetdb:
 	export PGPASSWORD="$(DB_PASSWORD)" && \
