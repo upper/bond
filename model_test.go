@@ -3,6 +3,7 @@ package bond_test
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"log"
 	"testing"
 	"upper.io/bond"
 	"upper.io/db.v3/postgresql"
@@ -21,6 +22,12 @@ func (um *UserModel) Store(sess bond.Session) bond.Store {
 }
 
 func (um *UserModel) BeforeCreate(sess bond.Session) error {
+	log.Printf("BeforeCreate")
+	return nil
+}
+
+func (um *UserModel) AfterCreate(sess bond.Session) error {
+	log.Printf("AfterCreate")
 	return nil
 }
 

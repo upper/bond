@@ -30,18 +30,18 @@ func pickDefault(env string, def string) string {
 type database struct {
 	bond.Session
 
-	Account AccountStore `collection:"accounts"`
-	User    UserStore    `collection:"users"`
-	Log     LogStore     `collection:"logs"`
+	Account AccountStore
+	User    UserStore
+	Log     LogStore
 }
 
 type Log struct {
-	ID      int64  `db:"id,omitempty,pk"`
+	ID      int64  `db:"id,omitempty"`
 	Message string `db:"message"`
 }
 
 type Account struct {
-	ID        int64     `db:"id,omitempty,pk"`
+	ID        int64     `db:"id,omitempty"`
 	Name      string    `db:"name"`
 	Disabled  bool      `db:"disabled"`
 	CreatedAt time.Time `db:"created_at"`
@@ -64,7 +64,7 @@ func (a *Account) BeforeDelete() error {
 }
 
 type User struct {
-	ID        int64  `db:"id,omitempty,pk"`
+	ID        int64  `db:"id,omitempty"`
 	AccountID int64  `db:"account_id"`
 	Username  string `db:"username"`
 }
