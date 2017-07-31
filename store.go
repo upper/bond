@@ -54,6 +54,12 @@ func (s *store) WithSession(sess Session) Store {
 }
 
 func (s *store) Save(item interface{}) error {
+	if saver, ok := item.(HasSave); ok {
+		return s.Session().SessionTx(nil, func(tx Session) error {
+			return saver.Save(tx)
+		})
+	}
+
 	if s.Collection == nil {
 		return ErrInvalidCollection
 	}

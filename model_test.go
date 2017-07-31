@@ -17,6 +17,13 @@ type UserModel struct {
 
 var _ bond.Model = &UserModel{}
 
+func (um *UserModel) Save(sess bond.Session) error {
+	if um.ID > 0 {
+		return um.Store(sess).UpdateReturning(um)
+	}
+	return um.Store(sess).InsertReturning(um)
+}
+
 func (um *UserModel) Store(sess bond.Session) bond.Store {
 	return repo.Users(sess)
 }

@@ -10,6 +10,10 @@ var (
 	ErrZeroItemID        = errors.New("item id is empty")
 )
 
+type HasSave interface {
+	Save(sess Session) error
+}
+
 type Model interface {
 	HasStore
 }
