@@ -35,6 +35,9 @@ type SQLBackend interface {
 type Backend interface {
 	sqlbuilder.SQLBuilder
 	db.Database
+
+	SetTxOptions(sql.TxOptions)
+	TxOptions() *sql.TxOptions
 }
 
 type Session interface {
