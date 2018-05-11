@@ -68,12 +68,6 @@ func (s *store) Save(item interface{}) error {
 		return ErrExpectingPointerToStruct
 	}
 
-	if m, ok := item.(HasValidate); ok {
-		if err := m.Validate(); err != nil {
-			return err
-		}
-	}
-
 	_, fields := s.getPrimaryKeyFields(item)
 	isCreate := true
 	for i := range fields {
@@ -92,6 +86,12 @@ func (s *store) Save(item interface{}) error {
 func (s *store) Create(item interface{}) error {
 	if s.Collection == nil {
 		return ErrInvalidCollection
+	}
+
+	if validator, ok := item.(HasValidate); ok {
+		if err := validator.Validate(); err != nil {
+			return err
+		}
 	}
 
 	if m, ok := item.(HasBeforeCreate); ok {
@@ -121,6 +121,12 @@ func (s *store) Create(item interface{}) error {
 func (s *store) Update(item interface{}) error {
 	if s.Collection == nil {
 		return ErrInvalidCollection
+	}
+
+	if validator, ok := item.(HasValidate); ok {
+		if err := validator.Validate(); err != nil {
+			return err
+		}
 	}
 
 	if m, ok := item.(HasBeforeUpdate); ok {
