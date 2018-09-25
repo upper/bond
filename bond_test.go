@@ -185,7 +185,7 @@ func TestAccount(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, acct.Name, acctChk.Name)
 
-	err = DB.Store(acctChk).Find(db.Cond{"id": acct.ID}).One(acctChk)
+	err = DB.ResolveStore(acctChk).Find(db.Cond{"id": acct.ID}).One(acctChk)
 	assert.NoError(t, err)
 	assert.Equal(t, acct.Name, acctChk.Name)
 
@@ -414,6 +414,6 @@ func TestUnknownStore(t *testing.T) {
 	err = DB.Save(nil)
 	assert.Error(t, err)
 
-	err = DB.Store(11).Save(&User{Username: "Foo"})
+	err = DB.ResolveStore(11).Save(&User{Username: "Foo"})
 	assert.Error(t, err)
 }

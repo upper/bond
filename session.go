@@ -43,7 +43,8 @@ type Backend interface {
 type Session interface {
 	Backend
 
-	Store(interface{}) Store
+	Store(collectionName string) Store
+	ResolveStore(interface{}) Store
 
 	Save(Model) error
 	Delete(Model) error
@@ -168,7 +169,27 @@ func (s *session) Delete(item Model) error {
 	return s.getStore(item).Delete(item)
 }
 
-func (s *session) Store(item interface{}) Store {
+func (s *session) Store(collectionName string) Store {
+	if collectionName == "" {
+		return &store{session: s}
+	}
+
+	s.storesLock.Lock()
+	defer s.storesLock.Unlock()
+
+	if store, ok := s.stores[collectionName]; ok {
+		return store
+	}
+
+	store := &store{
+		Collection: s.Collection(collectionName),
+		session:    s,
+	}
+	s.stores[collectionName] = store
+	return store
+}
+
+func (s *session) ResolveStore(item interface{}) Store {
 	var colName string
 
 	switch t := item.(type) {
@@ -193,21 +214,5 @@ func (s *session) Store(item interface{}) Store {
 		}
 	}
 
-	if colName == "" {
-		return &store{session: s}
-	}
-
-	s.storesLock.Lock()
-	defer s.storesLock.Unlock()
-
-	if store, ok := s.stores[colName]; ok {
-		return store
-	}
-
-	store := &store{
-		Collection: s.Collection(colName),
-		session:    s,
-	}
-	s.stores[colName] = store
-	return store
+	return s.Store(colName)
 }
