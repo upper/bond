@@ -6,14 +6,25 @@ notifications:
 language: go
 
 go:
-  - 1.7.x
-  - 1.8.x
-  - tip
+  - 1.10.x
+  - 1.11.x
+
+env:
+  global:
+  - GOARCH=amd64
+  - TEST_HOST=127.0.0.1
 
 addons:
-  postgresql: 9.4
+  postgresql: "10"
+  apt:
+    packages:
+    - postgresql-10
+    - postgresql-client-10
 
-env: GOARCH=amd64 TEST_HOST=127.0.0.1
+before_install:
+  - sudo sed -i -e '/local.*peer/s/postgres/all/' -e 's/peer\|md5/trust/g' /etc/postgresql/*/main/pg_hba.conf
+  - "sudo sed -i 's/port = 5433/port = 5432/' /etc/postgresql/10/main/postgresql.conf"
+  - "sudo service postgresql restart 10"
 
 install:
   - mkdir -p $GOPATH/src/upper.io
