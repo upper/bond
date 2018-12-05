@@ -137,7 +137,10 @@ func (s *session) SessionTx(ctx context.Context, fn func(sess Session) error) er
 		defer t.Close()
 		err := txFn(t)
 		if err != nil {
-			return t.Rollback()
+			if rErr := t.Rollback(); rErr != nil {
+				return rErr
+			}
+			return err
 		}
 		return t.Commit()
 	}
