@@ -3,11 +3,11 @@ package bond
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"reflect"
 	"sync"
 
+	"github.com/pkg/errors"
 	"upper.io/db.v3"
 	"upper.io/db.v3/lib/sqlbuilder"
 )
@@ -137,7 +137,10 @@ func (s *session) SessionTx(ctx context.Context, fn func(sess Session) error) er
 		defer t.Close()
 		err := txFn(t)
 		if err != nil {
-			return t.Rollback()
+			if rErr := t.Rollback(); rErr != nil {
+				return errors.Wrap(err, rErr.Error())
+			}
+			return err
 		}
 		return t.Commit()
 	}
