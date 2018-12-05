@@ -257,7 +257,7 @@ func TestSlices(t *testing.T) {
 
 func TestSelectOnlyIDs(t *testing.T) {
 	var ids []struct {
-		id int64 `db:"id"`
+		Id int64 `db:"id"`
 	}
 	err := DB.Account.Find(db.Cond{}).Select("id").All(&ids)
 	assert.NoError(t, err)
