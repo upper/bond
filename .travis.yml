@@ -1,4 +1,6 @@
-sudo: false
+dist: bionic
+
+sudo: required
 
 notifications:
   email: false
@@ -6,26 +8,21 @@ notifications:
 language: go
 
 go:
-  - 1.11.x
-  - 1.12.x
-  - 1.13.x
+  - "1.12"
+  - "1.13"
+
+services:
+  - docker
 
 env:
   global:
   - GOARCH=amd64
   - TEST_HOST=127.0.0.1
 
-addons:
-  postgresql: "10"
-  apt:
-    packages:
-    - postgresql-10
-    - postgresql-client-10
-
 before_install:
-  - sudo sed -i -e '/local.*peer/s/postgres/all/' -e 's/peer\|md5/trust/g' /etc/postgresql/*/main/pg_hba.conf
-  - "sudo sed -i 's/port = 5433/port = 5432/' /etc/postgresql/10/main/postgresql.conf"
-  - "sudo service postgresql restart 10"
+  - sudo service mysql stop
+  - sudo service postgresql stop
+  - sleep 10
 
 install:
   - mkdir -p $GOPATH/src/upper.io
@@ -35,4 +32,5 @@ install:
   - export TRAVIS_BUILD_DIR=$GOPATH/src/upper.io/bond
 
 script:
-  - make test
+  - make -C internal/tests server-up test server-down
+
