@@ -71,7 +71,7 @@ func dbUp() bond.Session {
 
 	cols, _ := sess.Collections()
 	for _, c := range cols {
-		sess.Collection(c).Truncate()
+		_ = sess.Collection(c).Truncate()
 	}
 
 	return sess

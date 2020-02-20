@@ -127,16 +127,13 @@ func dbConnected() bool {
 		return false
 	}
 	err := DB.Ping()
-	if err != nil {
-		return false
-	}
-	return true
+	return err == nil
 }
 
 func dbReset() {
 	cols, _ := DB.Collections()
 	for _, k := range cols {
-		DB.Collection(k).Truncate()
+		_ = DB.Collection(k).Truncate()
 	}
 }
 
@@ -170,8 +167,7 @@ func TestAccount(t *testing.T) {
 	// -------
 	// Read
 	// -------
-	var acctChk *Account
-	acctChk = &Account{}
+	acctChk := &Account{}
 
 	err = DB.Account.Find(db.Cond{"id": acct.ID}).One(&acctChk)
 	assert.NoError(t, err)
@@ -237,7 +233,7 @@ func TestDelete(t *testing.T) {
 	assert.NoError(t, err)
 
 	err = DB.Account.Delete(&Account{Name: "X"})
-	assert.Error(t, bond.ErrZeroItemID)
+	assert.NoError(t, err)
 }
 
 func TestSlices(t *testing.T) {
